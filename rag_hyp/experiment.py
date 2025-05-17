@@ -30,9 +30,9 @@ import glob
 
 # Импортируем модуль визуализации
 try:
-    import viz_utils
+    from . import viz_utils
     _viz_utils_available = True
-except ImportError:
+except Exception:  # pragma: no cover - optional dependency
     _viz_utils_available = False
     print("Модуль viz_utils не найден. Визуализация будет отключена.")
 
@@ -3012,7 +3012,7 @@ def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=N
 # --- КОНЕЦ ДОБАВЛЕНИЯ: Улучшение метода compute_loss ---
 
 # --- Основной блок --- 
-if __name__ == "__main__":
+def main():
     
     # --- ДОБАВЛЕНИЕ: Настройка логирования в файл --- 
     log_dir = CONFIG.get("logging_dir", os.path.join(CONFIG["prepared_data_dir"], 'logs'))
@@ -3264,3 +3264,6 @@ if __name__ == "__main__":
             print("\nНе удалось инициализировать модель для обучения.")
     else:
         print("\nПодготовка данных не удалась. Обучение отменено.")
+if __name__ == "__main__":
+    main()
+
