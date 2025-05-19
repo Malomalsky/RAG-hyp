@@ -19,13 +19,13 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 from sklearn.model_selection import train_test_split
-import logging # Добавляем импорт logging
-import evaluate # Добавляем evaluate
-import nltk # Добавляем nltk
+import logging
+import evaluate
+import nltk
 from functools import lru_cache
 import torch.nn.functional as F
-from scipy.stats import spearmanr # <--- Добавлен импорт scipy
-import functools # <--- Добавлен импорт functools
+from scipy.stats import spearmanr
+import functools
 import glob
 
 # Импортируем модуль визуализации
@@ -36,7 +36,6 @@ except Exception:  # pragma: no cover - optional dependency
     _viz_utils_available = False
     print("Модуль viz_utils не найден. Визуализация будет отключена.")
 
-# --- Проверка и импорт опциональных зависимостей ---
 try:
     import faiss
     _faiss_available = True
@@ -55,7 +54,6 @@ if not _faiss_available or not _datasets_available:
         "Для работы скрипта необходимы библиотеки faiss и datasets.\n" 
         "Установите их: pip install datasets faiss-cpu (или faiss-gpu)"
     )
-# --- Конец проверки --- 
 
 from transformers import (
     RagConfig, RagTokenizer, RagRetriever, RagSequenceForGeneration, 
@@ -107,22 +105,22 @@ CONFIG = {
     # Параметры Гиперболического Эмбеддинга
     "alpha_depth_scaling": 0.1,  # Устаревший параметр для tanh
     "angle_hash_modulo": 10000,
-    "hyperbolic_embedding_dim": 10, # <--- Добавлено
-    "centroid_max_iterations": 50,   # <--- Добавлено
-    "centroid_lr": 0.2,              # <--- Добавлено
-    "centroid_convergence_eps": 1e-5, # <--- Добавлено (увеличено)
-    "centroid_clip_threshold": 0.999, # <--- Добавлено (Ограничение радиуса)
-    "depth_beta": 0.5,              # <--- НОВОЕ: Параметр β для глубина→радиус
-    "depth_gamma": 1.0,             # <--- НОВОЕ: Параметр γ для глубина→радиус
-    "softmax_temperature": 0.07,    # <--- НОВОЕ: Температура τ для softmax скоров
-    "spearman_weight": 0.1,         # <--- НОВОЕ: Вес μ для регуляризации Спирмена
-    #"curriculum_weight": 0.1,       # <--- НОВОЕ: Вес η для регуляризации curriculum
+    "hyperbolic_embedding_dim": 10,
+    "centroid_max_iterations": 50,  
+    "centroid_lr": 0.2,             
+    "centroid_convergence_eps": 1e-5,
+    "centroid_clip_threshold": 0.999,
+    "depth_beta": 0.5,             
+    "depth_gamma": 1.0,            
+    "softmax_temperature": 0.07,   
+    "spearman_weight": 0.1,        
+   
     
     # Обучение
     "output_dir_base": "training_output", # Добавлено - базовая папка для вывода
     "epochs": 40, # Установите желаемое количество эпох
-    "batch_size": 8, # <--- Изменено
-    "gradient_accumulation_steps": 1, # <--- Изменено
+    "batch_size": 8,
+    "gradient_accumulation_steps": 1,
     "learning_rate": 1e-5, 
     "warmup_steps": 100,
     "weight_decay": 0.05,
@@ -296,12 +294,9 @@ def get_heuristic_hyperbolic_embedding(file_path, alpha=0.45, beta=0.5, gamma=0.
     # Определяем глубину как количество компонентов в пути
     depth = len(normalized_path.split('/'))
     
-    # --- ИЗМЕНЕНИЕ: Новая формула для вычисления радиуса (нормы) ---
-    # Старая формула: radius = math.tanh(alpha * depth)
-    # Новая формула: radius = 1 - math.exp(-beta * (depth + gamma))
+        # Новая формула: radius = 1 - math.exp(-beta * (depth + gamma))
     radius = 1.0 - math.exp(-beta * (depth + gamma))
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-    
+        
     # Масштабируем вектор
     v = radius * v
     
@@ -323,7 +318,6 @@ def get_heuristic_hyperbolic_embedding(file_path, alpha=0.45, beta=0.5, gamma=0.
     
     return v_tensor
 
-# --- ДОБАВЛЕНИЕ: Функция вычисления гиперболического центроида --- 
 def calculate_hyperbolic_centroid(
     vectors,
     weights: Optional[torch.Tensor] = None,
@@ -457,7 +451,6 @@ def calculate_hyperbolic_centroid(
     
     # Очищаем вычислительный граф и возвращаем результат
     return current_point.detach()
-# --- КОНЕЦ ДОБАВЛЕНИЯ --- 
 
 # Добавить после функции calculate_hyperbolic_centroid
 def batch_calculate_hyperbolic_centroids(file_paths_batch, changed_lines=None, alpha=0.45, beta=0.5, gamma=0.1, 
@@ -503,8 +496,7 @@ def batch_calculate_hyperbolic_centroids(file_paths_batch, changed_lines=None, a
             if changed_lines is not None and i < len(changed_lines):
                 changed_lines[i] = [changed_lines[i][idx] for idx in indices if idx < len(changed_lines[i])]
         
-        # --- НАЧАЛО: Новый код для вычисления информационных весов ---
-        weights = None
+                weights = None
         if use_weights and changed_lines is not None and i < len(changed_lines) and changed_lines[i]:
             # Используем информацию о количестве измененных строк как веса
             weights = [max(1, lines_count) for lines_count in changed_lines[i]]
@@ -513,17 +505,13 @@ def batch_calculate_hyperbolic_centroids(file_paths_batch, changed_lines=None, a
             total_weight = sum(weights)
             if total_weight > 0:
                 weights = [w / total_weight for w in weights]
-        # --- КОНЕЦ: Новый код для вычисления информационных весов ---
-        
+                
         # Получаем эмбеддинги для путей к файлам
         embeddings = []
-        # --- ИЗМЕНЕНИЕ: Определяем embedding_dim и dtype для вызова --- 
-        embedding_dim = manifold.dim
+                embedding_dim = manifold.dim
         dtype = DEFAULT_DTYPE
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-        for path in file_paths:
-            # --- ИЗМЕНЕНИЕ: Передаем все необходимые параметры --- 
-            embedding = get_heuristic_hyperbolic_embedding(
+                for path in file_paths:
+                        embedding = get_heuristic_hyperbolic_embedding(
                 path, 
                 alpha=alpha, 
                 beta=beta, 
@@ -532,22 +520,19 @@ def batch_calculate_hyperbolic_centroids(file_paths_batch, changed_lines=None, a
                 embedding_dim=embedding_dim,
                 dtype=dtype
             )
-            # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-            embeddings.append(embedding)
+                        embeddings.append(embedding)
         
         # Объединяем эмбеддинги в пакетный тензор
         embeddings_tensor = torch.stack(embeddings)
         
         # Вычисляем центроид
-        # --- ИЗМЕНЕНИЕ: Передаем embedding_dim --- 
-        centroid = calculate_hyperbolic_centroid(
+                centroid = calculate_hyperbolic_centroid(
             embeddings_tensor, 
             weights=weights, 
             manifold=manifold,
             embedding_dim=embedding_dim # <-- Добавлено
         )
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-        centroids.append(centroid)
+                centroids.append(centroid)
     
     return centroids
 
@@ -574,11 +559,9 @@ def clean_data(dataset):
     diffs, msgs, diff_ids = [], [], []
     for entry in dataset:
         diff, msg, diff_id = entry.get('diff'), entry.get('msg'), entry.get('diff_id')
-        # --- ИЗМЕНЕНИЕ: Проверяем только наличие diff_id, не тип --- 
-        if diff and msg and diff_id is not None: 
+                if diff and msg and diff_id is not None: 
             try:
-                # --- ИЗМЕНЕНИЕ: Убираем int(), сохраняем как строку --- 
-                diff_ids.append(str(diff_id)) # Сохраняем ID как строку (хэш)
+                                diff_ids.append(str(diff_id)) # Сохраняем ID как строку (хэш)
                 diffs.append(str(diff).replace('<nl>', '\n').strip())
                 msgs.append(' '.join(str(msg).replace('<nl>', '\n').split()))
             except (ValueError, TypeError): # Оставляем на случай других проблем
@@ -588,61 +571,51 @@ def clean_data(dataset):
 
 def split_dataset(diffs, messages, diff_ids, file_paths_list, config: dict):
     """Разделяет датасет на train/validation/test сеты, включая file_paths."""
-    # --- ИЗМЕНЕНИЕ: Используем размеры из config --- 
-    train_size = config.get("train_split_ratio", 0.7)
+        train_size = config.get("train_split_ratio", 0.7)
     val_size = config.get("validation_split_ratio", 0.15)
     test_size = config.get("test_split_ratio", 0.15)
     random_state=config["random_state"]
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-    
+        
     expected_total = len(diffs)
     if expected_total == 0: print("Ошибка: Нет данных для разделения."); return None
-    # --- ИЗМЕНЕНИЕ: Проверка суммы размеров --- 
-    if abs(train_size + val_size + test_size - 1.0) > 1e-6:
+        if abs(train_size + val_size + test_size - 1.0) > 1e-6:
         print(f"Warning: Сумма размеров ({train_size}+{val_size}+{test_size}) != 1. Проверьте *_split_ratio в CONFIG.")
         # Можно добавить нормализацию или вернуть ошибку
         # total = train_size + val_size + test_size
         # train_size /= total; val_size /= total; test_size /= total
         return None # Лучше остановить, если размеры неправильные
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        
-    # --- ИЗМЕНЕНИЕ: Делим file_paths_list вместе с остальными --- 
-    train_val_diffs, test_diffs, \
+            
+        train_val_diffs, test_diffs, \
     train_val_msgs, test_msgs, \
     train_val_ids, test_ids, \
     train_val_paths, test_paths = train_test_split(
-        diffs, messages, diff_ids, file_paths_list, # <--- Добавили file_paths_list
+        diffs, messages, diff_ids, file_paths_list,
         test_size=test_size, random_state=random_state)
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        
+            
     if len(train_val_diffs) > 0:
         train_val_sum = train_size + val_size
         relative_train_size = train_size / train_val_sum if train_val_sum > 0 else 0.0
         if relative_train_size >= 1.0: relative_train_size = 0.999999 
         if relative_train_size > 0:
-            # --- ИЗМЕНЕНИЕ: Делим file_paths_list вместе с остальными --- 
-            train_diffs, val_diffs, \
+                        train_diffs, val_diffs, \
             train_msgs, val_msgs, \
             train_ids, val_ids, \
             train_paths, val_paths = train_test_split(
-                train_val_diffs, train_val_msgs, train_val_ids, train_val_paths, # <--- Добавили train_val_paths
+                train_val_diffs, train_val_msgs, train_val_ids, train_val_paths,
                 train_size=relative_train_size, random_state=random_state)
-            # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        else: 
+                    else: 
              train_diffs, train_msgs, train_ids, train_paths = [], [], [], [] # Добавили train_paths
              val_diffs, val_msgs, val_ids, val_paths = train_val_diffs, train_val_msgs, train_val_ids, train_val_paths # Добавили val_paths
     else:
         train_diffs, val_diffs, train_msgs, val_msgs, train_ids, val_ids, train_paths, val_paths = [], [], [], [], [], [], [], [] # Добавили paths
         
     print(f"Разделение данных: Train={len(train_diffs)}, Validation={len(val_diffs)}, Test={len(test_diffs)}")
-    # --- ИЗМЕНЕНИЕ: Возвращаем file_paths для каждого сплита --- 
-    return {
+        return {
         'train': {'diffs': train_diffs, 'messages': train_msgs, 'diff_ids': train_ids, 'file_paths': train_paths},
         'validation': {'diffs': val_diffs, 'messages': val_msgs, 'diff_ids': val_ids, 'file_paths': val_paths},
         'test': {'diffs': test_diffs, 'messages': test_msgs, 'diff_ids': test_ids, 'file_paths': test_paths},
     }
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-
+    
 def serialize_splits(dataset_splits: dict, config: dict):
     """Сериализует сплиты датасета в файлы, включая file_paths."""
     output_dir = config["prepared_data_dir"]
@@ -656,11 +629,9 @@ def serialize_splits(dataset_splits: dict, config: dict):
             success = False
             continue
         try:
-            # --- ИЗМЕНЕНИЕ: Убеждаемся, что data содержит file_paths перед сохранением --- 
-            if 'file_paths' not in data:
+                        if 'file_paths' not in data:
                 print(f"Warning: Ключ 'file_paths' отсутствует в данных для сплита '{split_name}'. Сохранение без него.")
-            # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-            with open(file_path, 'wb') as f: pickle.dump(data, f)
+                        with open(file_path, 'wb') as f: pickle.dump(data, f)
             print(f"Сериализован {split_name} сет в {file_path}")
         except Exception as e: 
             print(f"Ошибка при сериализации {split_name} сета: {e}")
@@ -687,8 +658,7 @@ def generate_semantic_embeddings(diffs: List[str], tokenizer: AutoTokenizer, mod
         print(f"Семантические эмбеддинги уже существуют: {output_path}. Загрузка...")
         try:
             embeddings = np.load(output_path)
-            # --- ДОБАВЛЕНИЕ: Проверяем размер при загрузке --- 
-            if len(embeddings) == len(diffs):
+                        if len(embeddings) == len(diffs):
                 print(f"Загружены эмбеддинги размера: {embeddings.shape}. Размер совпадает.")
                 return embeddings
             else:
@@ -703,16 +673,12 @@ def generate_semantic_embeddings(diffs: List[str], tokenizer: AutoTokenizer, mod
         print("Нет диффов для генерации эмбеддингов.")
         return np.empty((0, 0), dtype=np.float32) # Возвращаем пустой массив
         
-    # --- ИЗМЕНЕНИЕ: Получаем max_length из config --- 
-    question_encoder_max_length = config.get("question_encoder_max_length", 512) 
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-    
-    # --- ИЗМЕНЕНИЕ: Предварительное выделение памяти --- 
-    embeddings_np = None # Инициализируем None
+        question_encoder_max_length = config.get("question_encoder_max_length", 512) 
+        
+        embeddings_np = None # Инициализируем None
     embedding_dim = -1
     # all_embeddings = [] # Убираем список для накопления
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-    
+        
     num_batches = (len(diffs) + batch_size - 1) // batch_size
     model.eval() # Убедимся, что модель в режиме eval
     try:
@@ -721,18 +687,15 @@ def generate_semantic_embeddings(diffs: List[str], tokenizer: AutoTokenizer, mod
             end_index = min((i + 1) * batch_size, total_embeddings)
             batch_diffs = diffs[start_index:end_index]
             
-            # --- ИЗМЕНЕНИЕ: Используем max_length из config --- 
-            encoded_input = tokenizer(batch_diffs, padding=True, truncation=True, return_tensors='pt', max_length=question_encoder_max_length)
-            # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-            encoded_input = {key: val.to(device) for key, val in encoded_input.items()}
+                        encoded_input = tokenizer(batch_diffs, padding=True, truncation=True, return_tensors='pt', max_length=question_encoder_max_length)
+                        encoded_input = {key: val.to(device) for key, val in encoded_input.items()}
             with torch.no_grad():
                 model_output = model(**encoded_input)
             
             batch_embeddings = model_output.pooler_output if hasattr(model_output, 'pooler_output') and model_output.pooler_output is not None else model_output.last_hidden_state[:, 0, :]
             batch_embeddings_np = batch_embeddings.cpu().numpy()
             
-            # --- ИЗМЕНЕНИЕ: Запись напрямую в массив --- 
-            # Определяем размерность и создаем массив при первом батче
+                        # Определяем размерность и создаем массив при первом батче
             if embeddings_np is None:
                 embedding_dim = batch_embeddings_np.shape[1]
                 embeddings_np = np.empty((total_embeddings, embedding_dim), dtype=np.float32)
@@ -740,11 +703,6 @@ def generate_semantic_embeddings(diffs: List[str], tokenizer: AutoTokenizer, mod
             
             # Записываем текущий батч в предвыделенный массив
             embeddings_np[start_index:end_index] = batch_embeddings_np
-            # all_embeddings.append(batch_embeddings.cpu().numpy()) # Старая строка
-            # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-            
-        # embeddings_np = np.vstack(all_embeddings).astype(np.float32) # Старая строка
-        
         # Проверяем, был ли массив создан (на случай пустого входа)
         if embeddings_np is None:
              print("Предупреждение: Не удалось создать массив эмбеддингов (возможно, пустой входной список diffs).")
@@ -798,11 +756,9 @@ def prepare_structural_embeddings_for_all(file_paths_list: List[List[str]],
                                               config: dict):
     """Вычисляет и сохраняет гиперболические центроиды для всех данных."""
     
-    # --- ИЗМЕНЕНИЕ: Получаем размерность и dtype из config/констант --- 
-    embedding_dim = config.get("hyperbolic_embedding_dim", 2)
+        embedding_dim = config.get("hyperbolic_embedding_dim", 2)
     dtype = DEFAULT_DTYPE # Используем глобальный float32 для train.py
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
+    
     # Проверка существующего файла 
     if os.path.exists(output_path):
         logging.info(f"Структурные эмбеддинги (центроиды) уже существуют: {output_path}. Загрузка...")
@@ -828,13 +784,11 @@ def prepare_structural_embeddings_for_all(file_paths_list: List[List[str]],
     processed_count = 0
 
     logging.info(f"Вычисление {num_embeddings} гиперболических центроидов...")
-    # --- ИЗМЕНЕНИЕ: Получаем параметры центроида из config --- 
-    centroid_max_iter = config.get("centroid_max_iterations", 50)
+        centroid_max_iter = config.get("centroid_max_iterations", 50)
     centroid_lr = config.get("centroid_lr", 0.5)
     centroid_eps = config.get("centroid_convergence_eps", 1e-4)
-    centroid_clip_threshold = config.get("centroid_clip_threshold", 0.999) # <--- Получаем порог
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-    for i, paths_for_entry in tqdm(enumerate(file_paths_list), total=num_embeddings, desc="Генерация структурных центроидов"):
+    centroid_clip_threshold = config.get("centroid_clip_threshold", 0.999)
+        for i, paths_for_entry in tqdm(enumerate(file_paths_list), total=num_embeddings, desc="Генерация структурных центроидов"):
         try:
             # 1. Вычисляем эмбеддинги для всех путей в текущей записи
             individual_embeddings = []
@@ -848,17 +802,15 @@ def prepare_structural_embeddings_for_all(file_paths_list: List[List[str]],
                     individual_embeddings.append(h_point)
             
             # 2. Вычисляем центроид для этих точек
-            # --- ИЗМЕНЕНИЕ: Передаем параметры в calculate_hyperbolic_centroid --- 
-            h_centroid = calculate_hyperbolic_centroid(
+                        h_centroid = calculate_hyperbolic_centroid(
                 individual_embeddings, 
                 embedding_dim=embedding_dim, # <-- Передаем размерность
                 max_iterations=centroid_max_iter,
                 lr=centroid_lr,
-                convergence_eps=centroid_eps,  # <--- ИСПРАВЛЕНО: было eps, стало convergence_eps
-                clip_threshold=centroid_clip_threshold # <--- Передаем порог
+                convergence_eps=centroid_eps, 
+                clip_threshold=centroid_clip_threshold
             ) 
-            # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-            
+                        
             # 3. Записываем центроид
             all_centroids[i] = h_centroid
             processed_count += 1
@@ -868,17 +820,15 @@ def prepare_structural_embeddings_for_all(file_paths_list: List[List[str]],
 
     logging.info(f"Тензор центроидов создан: {all_centroids.shape}. Обработано: {processed_count}/{num_embeddings}.")
 
-    # --- ВОССТАНОВЛЕНИЕ: Блок try-except для сохранения --- 
-    try:
+        try:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        torch.save(all_centroids, output_path) # <--- Отступ исправлен
+        torch.save(all_centroids, output_path)
         logging.info(f"Структурные эмбеддинги (центроиды) сохранены в {output_path}")
         return True
     except Exception as e:
         logging.error(f"Ошибка сохранения тензора структурных центроидов: {e}", exc_info=True)
         return False
-    # --- КОНЕЦ ВОССТАНОВЛЕНИЯ --- 
-
+    
 def prepare_all_data(config: dict) -> bool:
     """Оркестрирует весь процесс подготовки данных, читая предобработанный JSONL."""
     logging.info("--- Шаг 0: Проверка и подготовка данных для обучения --- ") # Используем logging
@@ -892,8 +842,7 @@ def prepare_all_data(config: dict) -> bool:
     if not os.path.exists(jsonl_path):
         logging.error(f"Основной файл данных JSONL не найден: {jsonl_path}. Создайте его с помощью prepare_dataset.py или укажите правильный путь.")
         return False
-    # --- УДАЛЕНО: Проверка наличия структурных эмбеддингов в начале --- 
-    # if not os.path.exists(struct_emb_path):
+        # if not os.path.exists(struct_emb_path):
     #     logging.error(f"Файл структурных эмбеддингов не найден: {struct_emb_path}. Запустите prepare_dataset.py")
     #     return False
 
@@ -924,8 +873,7 @@ def prepare_all_data(config: dict) -> bool:
         return False
     logging.info(f"Прочитано {len(diffs)} валидных записей из JSONL.")
 
-    # --- ДОБАВЛЕНИЕ: Применяем ограничение max_raw_entries --- 
-    max_entries_to_use = config.get("max_raw_entries", None) 
+        max_entries_to_use = config.get("max_raw_entries", None) 
     if max_entries_to_use is not None and len(diffs) > max_entries_to_use:
         logging.info(f"Используем только первые {max_entries_to_use} записей из {len(diffs)} для обучения/обработки.")
         diffs = diffs[:max_entries_to_use]
@@ -933,14 +881,12 @@ def prepare_all_data(config: dict) -> bool:
         diff_ids = diff_ids[:max_entries_to_use]
         file_paths_list = file_paths_list[:max_entries_to_use]
         logging.info(f"Размер датасета после ограничения: {len(diffs)} записей.")
-    # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-
+    
     # 3. Разделение на сплиты и сохранение (если нужно)
     split_paths_needed = [config["train_split_path"], config["validation_split_path"], config["test_split_path"]]
     if not all(os.path.exists(p) for p in split_paths_needed):
         logging.info("Разделение данных на train/validation/test...")
-        # --- ИЗМЕНЕНИЕ: Передаем file_paths_list в split_dataset --- 
-        dataset_splits = split_dataset(diffs, msgs, diff_ids, file_paths_list, config)
+                dataset_splits = split_dataset(diffs, msgs, diff_ids, file_paths_list, config)
         if not dataset_splits or not serialize_splits(dataset_splits, config):
             logging.error("Ошибка: Не удалось разделить/сохранить сплиты.")
             return False
@@ -1018,21 +964,18 @@ def prepare_all_data(config: dict) -> bool:
     else:
         logging.info(f"KB Dataset уже существует: {kb_path}.")
 
-    # --- ИЗМЕНЕНИЕ: Генерация структурных эмбеддингов (если отсутствуют) --- 
-    # 7. Генерация/Проверка структурных эмбеддингов
+        # 7. Генерация/Проверка структурных эмбеддингов
     struct_emb_path = config["structural_embeddings_output_path"]
     if not os.path.exists(struct_emb_path):
         logging.info(f"Генерация структурных эмбеддингов в {struct_emb_path}...")
-        # --- ИЗМЕНЕНИЕ: Передаем dtype=DEFAULT_DTYPE --- 
-        struct_ready = prepare_structural_embeddings_for_all(
+                struct_ready = prepare_structural_embeddings_for_all(
             file_paths_list=file_paths_list, 
             output_path=struct_emb_path,
             alpha=config["alpha_depth_scaling"],
             angle_hash_modulo=config["angle_hash_modulo"],
             config=config 
         )
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        if not struct_ready:
+                if not struct_ready:
             logging.error("Не удалось создать структурные эмбеддинги.")
             return False
     else:
@@ -1077,12 +1020,10 @@ def prepare_all_data(config: dict) -> bool:
         except Exception as e:
             logging.error(f"Ошибка загрузки/проверки структурных эмбеддингов: {e}")
             return False
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-
+    
     logging.info("--- Шаг 0: Подготовка данных завершена успешно --- ")
     return True
 
-# --- Подготовка данных для Тренера --- 
 
 def load_split_data(config: dict, split_name: str) -> Optional[Dict]:
     """Загружает данные для конкретного сплита, включая file_paths."""
@@ -1097,8 +1038,7 @@ def load_split_data(config: dict, split_name: str) -> Optional[Dict]:
         
         num_entries = len(split_data.get('messages', [])) # Определяем количество записей
         
-        # --- ИЗМЕНЕНИЕ: Добавляем 'question_file_paths' --- 
-        # Оставляем diffs под ключом question_diffs на случай, если где-то используются
+                # Оставляем diffs под ключом question_diffs на случай, если где-то используются
         if 'diffs' in split_data:
             split_data['question_diffs'] = split_data['diffs'] 
         else:
@@ -1112,8 +1052,7 @@ def load_split_data(config: dict, split_name: str) -> Optional[Dict]:
             # Если file_paths отсутствуют, создаем список пустых списков
             logging.warning(f"Ключ 'file_paths' не найден в {file_path}. Будут использованы пустые списки.")
             split_data['question_file_paths'] = [[] for _ in range(num_entries)]
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-            
+                    
         return split_data
     except FileNotFoundError:
         logging.error(f"Файл с данными сплита '{split_name}' не найден: {file_path}")
@@ -1124,32 +1063,26 @@ def load_split_data(config: dict, split_name: str) -> Optional[Dict]:
 
 def tokenize_dataset_for_training(dataset_dict: Dict, tokenizer: RagTokenizer, config: dict) -> Optional[Dataset]:
     """Токенизирует данные и создает Dataset, сохраняя question_diffs и question_file_paths."""
-    tokenized_dataset = None # <--- Инициализируем None
+    tokenized_dataset = None
     try:
         # Проверяем наличие необходимых ключей
-        # --- ИЗМЕНЕНИЕ: Добавляем проверку question_file_paths --- 
-        required_keys = ['diffs', 'messages', 'question_diffs', 'question_file_paths']
+                required_keys = ['diffs', 'messages', 'question_diffs', 'question_file_paths']
         if not all(key in dataset_dict for key in required_keys):
              logging.error("В словаре данных отсутствуют необходимые ключи ('diffs', 'messages', 'question_diffs', 'question_file_paths').")
              return None
              
-        # --- ИЗМЕНЕНИЕ: Добавляем question_file_paths в Dataset --- 
-        dataset = Dataset.from_dict({
+                dataset = Dataset.from_dict({
             'input_text': dataset_dict['diffs'],
             'target_text': dataset_dict['messages'],
             'question_diffs': dataset_dict['question_diffs'], 
-            'question_file_paths': dataset_dict['question_file_paths'] # <--- ДОБАВЛЕНО
+            'question_file_paths': dataset_dict['question_file_paths']
         })
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-        
-        # --- ИЗМЕНЕНИЕ: Получаем max_length из config --- 
-        question_encoder_max_length = config.get("question_encoder_max_length", 512)
+                
+                question_encoder_max_length = config.get("question_encoder_max_length", 512)
         generator_labels_max_length = config.get("generator_labels_max_length", 128)
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-        
+                
         def tokenize_fn(examples):
-            # --- ВОССТАНОВЛЕНИЕ: Логика tokenize_fn --- 
-            # Токенизация входа для question_encoder
+                        # Токенизация входа для question_encoder
             model_inputs = tokenizer.question_encoder(examples['input_text'], max_length=question_encoder_max_length, padding="max_length", truncation=True)
             # Токенизация выхода для generator (labels)
             with tokenizer.generator.as_target_tokenizer():
@@ -1158,10 +1091,9 @@ def tokenize_dataset_for_training(dataset_dict: Dict, tokenizer: RagTokenizer, c
             # Передаем question_file_paths и question_diffs
             model_inputs["question_diffs"] = examples["question_diffs"]
             model_inputs["question_file_paths"] = examples["question_file_paths"]
-            # --- КОНЕЦ ВОССТАНОВЛЕНИЯ --- 
-            return model_inputs
+                        return model_inputs
             
-        tokenized_dataset = dataset.map( # <--- Присваивание
+        tokenized_dataset = dataset.map(
             tokenize_fn, 
             batched=True, 
             remove_columns=['input_text', 'target_text'] 
@@ -1170,37 +1102,31 @@ def tokenize_dataset_for_training(dataset_dict: Dict, tokenizer: RagTokenizer, c
         # Указываем формат torch для основных колонок
         tokenized_dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'labels'])
         # Колонки question_diffs и question_file_paths остаются в формате Python list
-        return tokenized_dataset # <--- Использование
+        return tokenized_dataset
     except Exception as e:
         logging.error(f"Ошибка при токенизации датасета: {e}", exc_info=True) # Добавляем exc_info
         # import traceback; traceback.print_exc()
         return None
     
-# --- Кастомный Data Collator --- 
 class CustomDataCollatorWithPaths(DataCollatorForSeq2Seq): # Переименовано
     """
     Кастомный Data Collator, который сохраняет колонку 'question_file_paths'.
     """
     def __call__(self, features, return_tensors=None):
-        # --- ИЗМЕНЕНИЕ: Извлекаем question_file_paths --- 
-        # Сохраняем diffs перед вызовом родительского collate (если нужны)
+                # Сохраняем diffs перед вызовом родительского collate (если нужны)
         question_diffs = [feature.pop("question_diffs", None) for feature in features]
         # Сохраняем file_paths 
         question_file_paths = [feature.pop("question_file_paths", []) for feature in features]
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-        
+                
         # Вызываем стандартный collate для остальных полей (input_ids, attention_mask, labels)
         batch = super().__call__(features, return_tensors)
         
-        # --- ИЗМЕНЕНИЕ: Добавляем question_file_paths обратно --- 
-        # Добавляем diffs обратно в батч (если нужны)
+                # Добавляем diffs обратно в батч (если нужны)
         batch["question_diffs"] = question_diffs
         # Добавляем file_paths обратно в батч
         batch["question_file_paths"] = question_file_paths
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        return batch
+                return batch
 
-# --- Кастомный Тренер (Обновлено) --- 
 class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1232,19 +1158,14 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
         """
         Переопределяем compute_loss для передачи question_file_paths в модель.
         """
-        # --- ИЗМЕНЕНИЕ: Извлекаем question_file_paths --- 
-        # question_diffs = inputs.pop("question_diffs", None) # Старое
+                # question_diffs = inputs.pop("question_diffs", None) # Старое
         question_file_paths = inputs.pop("question_file_paths", None) 
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        labels = inputs.get("labels")
-        # --- ИЗМЕНЕНИЕ: Передаем question_file_paths в модель --- 
-        outputs = model(**inputs, question_file_paths=question_file_paths, return_dict=True)
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        loss = outputs.loss 
+                labels = inputs.get("labels")
+                outputs = model(**inputs, question_file_paths=question_file_paths, return_dict=True)
+                loss = outputs.loss 
         if loss is not None and loss.dim() > 0: loss = loss.mean()
 
-        # --- ДОБАВЛЕНИЕ: Регуляризация кривизны --- 
-        curvature_reg_weight = 0.1  # Вес для регуляризации кривизны (можно настроить)
+                curvature_reg_weight = 0.1  # Вес для регуляризации кривизны (можно настроить)
         initial_curvature = 1.0  # Начальное значение кривизны (обычно 1.0)
         
         try:
@@ -1270,9 +1191,7 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
                  logging.warning("Атрибут poincare_ball не найден в trainer для регуляризации кривизны.")
         except Exception as e:
             logging.warning(f"Ошибка при вычислении регуляризации кривизны: {e}")
-        # --- КОНЕЦ ДОБАВЛЕНИЯ: Регуляризация кривизны ---
-        # --- ДОБАВЛЕНИЕ: curriculum‑регуляризация для rerank_weight ---
-        curriculum_weight = CONFIG.get("curriculum_weight", 0.05)
+                        curriculum_weight = CONFIG.get("curriculum_weight", 0.05)
         if curriculum_weight > 0:
             try:
                 # Ищем rerank_weight в модели
@@ -1288,9 +1207,7 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
                     logging.debug(f"Добавлена curriculum-регуляризация с весом {curriculum_weight}, текущий rerank_weight={rw.item():.4f}")
             except Exception as e:
                 logging.warning(f"Ошибка при вычислении curriculum-регуляризации: {e}")
-        # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-        # --- ДОБАВЛЕНИЕ: Регуляризация Спирмена ---
-        spearman_weight = CONFIG.get("spearman_weight", 0.0) # Используем 0.0 по умолчанию, если не задано
+                        spearman_weight = CONFIG.get("spearman_weight", 0.0) # Используем 0.0 по умолчанию, если не задано
         if spearman_weight > 0 and question_file_paths is not None:
             try:
                 # Получаем эмбеддинги вопроса (могут быть разного вида в зависимости от модели)
@@ -1368,8 +1285,7 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
 
             except Exception as e:
                  logging.warning(f"Ошибка при вычислении Spearman-регуляризации: {e}", exc_info=True) # Добавлено exc_info=True
-        # --- КОНЕЦ ДОБАВЛЕНИЯ: Регуляризация Спирмена ---
-        return (loss, outputs) if return_outputs else loss
+                return (loss, outputs) if return_outputs else loss
 
     def create_optimizer_and_scheduler(self, num_training_steps: int):
         """
@@ -1382,8 +1298,7 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
         hyperbolic_params = []
         main_params = []
         
-        # --- Шаг 1.1 Работа с параметром кривизны k --------------------------
-        # 1. Определяем, какой параметр кривизны используется в этой версии geoopt
+                # 1. Определяем, какой параметр кривизны используется в этой версии geoopt
         curv_param = None
         curv_param_name = None
         
@@ -1436,8 +1351,7 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
             self.curv_param_name = curv_param_name
             self.curv_param = curv_param
             self.poincare_ball = poincare_ball
-        # ----------------------------------------------------------------------
-        
+                
         # 1.2 Находим и обрабатываем параметр веса переранжирования (rerank_weight)
         rerank_weight_params = []
         for module in self.model.modules():
@@ -1459,8 +1373,7 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
         # Добавляем все найденные параметры веса в гиперболические
         hyperbolic_params.extend(rerank_weight_params)
         
-        # --- ДОБАВЛЕНО: обработка mixing_temperature ПЕРЕД созданием оптимизатора ---
-        mixing_temp_params = []
+                mixing_temp_params = []
         for module in self.model.modules():
             if hasattr(module, 'mixing_temperature') and isinstance(module.mixing_temperature, torch.nn.Parameter):
                 if not module.mixing_temperature.is_leaf:
@@ -1473,8 +1386,7 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
                     logging.info(f"Найден leaf‑параметр mixing_temperature: {module.mixing_temperature}")
         # Добавляем параметры температуры в гиперболическую группу ДО оптимизатора
         hyperbolic_params.extend(mixing_temp_params)
-        # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-        
+                
         # 1.3 Собираем основные параметры модели (исключая гиперболические)
         hyperbolic_param_ids = {id(p) for p in hyperbolic_params}
         for name, param in self.model.named_parameters():
@@ -1533,7 +1445,6 @@ class RerankingSeq2SeqTrainer(Seq2SeqTrainer):
     # Возможно, потребуется переопределить и prediction_step, чтобы явно извлечь 
     # question_diffs из inputs и передать их в model.generate.
 
-# --- Ретривер с Переранжированием (Обертка v3 - Финальная) ---
 class RerankingRagRetriever:
     """
     Обертка над стандартным RagRetriever, добавляющая переранжирование
@@ -1548,15 +1459,13 @@ class RerankingRagRetriever:
                  rerank_weight: float = 0.2,
                  alpha_depth_scaling: float = 0.1,
                  angle_hash_modulo: int = 10000,
-                 # --- Новые параметры --- 
-                 centroid_max_iterations: int = 75,
+                                  centroid_max_iterations: int = 75,
                  centroid_lr: float = 0.5,
                  centroid_convergence_eps: float = 1e-4,
                  centroid_clip_threshold: float = 0.999,
                  mixing_temperature: float = 1.0,  # <-- НОВЫЙ параметр для температурного смешивания
                  use_hyperbolic_inner_product: bool = True,  # <-- НОВЫЙ параметр для переключения на inner product
-                 # --- Конец --- 
-                 hyperbolic_manifold: geoopt.PoincareBall = poincare_ball,
+                                  hyperbolic_manifold: geoopt.PoincareBall = poincare_ball,
                  device: Optional[str] = None,
                  learnable_weight: bool = True):
         """
@@ -1564,11 +1473,9 @@ class RerankingRagRetriever:
         """
         self.base_retriever = base_rag_retriever
         
-        # --- ИЗМЕНЕНИЕ: Добавляем явную проверку --- 
-        if not hasattr(self.base_retriever, 'config'):
+                if not hasattr(self.base_retriever, 'config'):
             raise AttributeError("Переданный base_rag_retriever не имеет атрибута 'config'!")
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-        
+                
         # Проверяем наличие остальных необходимых атрибутов
         if not hasattr(self.base_retriever, 'index') or \
            not hasattr(self.base_retriever.index, 'dataset'):
@@ -1579,16 +1486,12 @@ class RerankingRagRetriever:
              print(f"Warning: base_retriever.config.n_docs ({self.config.n_docs}) != n_final ({n_final}). Устанавливаем config.n_docs={n_final}")
              self.config.n_docs = n_final
              
-        # --- ВОССТАНАВЛИВАЕМ ОПРЕДЕЛЕНИЕ УСТРОЙСТВА --- 
-        resolved_device = device if device is not None else ('cuda' if torch.cuda.is_available() else 'cpu')
+                resolved_device = device if device is not None else ('cuda' if torch.cuda.is_available() else 'cpu')
         self.device = torch.device(resolved_device)
-        # --- КОНЕЦ --- 
-        
+                
         self.structural_embeddings = structural_embeddings.to(self.device)
-        # --- ДОБАВЛЕНИЕ: Сохраняем embedding_dim ---
-        self.embedding_dim = self.structural_embeddings.shape[1] 
-        # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-        self.k_to_rerank = k_to_rerank
+                self.embedding_dim = self.structural_embeddings.shape[1] 
+                self.k_to_rerank = k_to_rerank
         self.n_final = n_final
         # Заменяем статический вес на обучаемый параметр
         if learnable_weight:
@@ -1596,25 +1499,21 @@ class RerankingRagRetriever:
         else:
             self.rerank_weight = rerank_weight
 
-        # --- НОВОЕ: Параметры для улучшенных функций ---
-        self.mixing_temperature = torch.nn.Parameter(torch.tensor(mixing_temperature, dtype=self.structural_embeddings.dtype)) if learnable_weight else mixing_temperature
+                self.mixing_temperature = torch.nn.Parameter(torch.tensor(mixing_temperature, dtype=self.structural_embeddings.dtype)) if learnable_weight else mixing_temperature
         self.use_hyperbolic_inner_product = use_hyperbolic_inner_product
         self.depth_beta = torch.nn.Parameter(torch.tensor(0.5, dtype=self.structural_embeddings.dtype)) if learnable_weight else 0.5
         self.depth_gamma = torch.nn.Parameter(torch.tensor(1.0, dtype=self.structural_embeddings.dtype)) if learnable_weight else 1.0
-        # --- КОНЕЦ НОВОГО ---
-            
+                    
         self.semantic_weight = 1.0 - self.rerank_weight  # Это надо будет изменить в forward
         self.manifold = hyperbolic_manifold
         self.dtype = self.structural_embeddings.dtype
         self.alpha_depth_scaling = alpha_depth_scaling
         self.angle_hash_modulo = angle_hash_modulo
-        # --- Сохраняем новые параметры --- 
-        self.centroid_max_iterations = centroid_max_iterations
+                self.centroid_max_iterations = centroid_max_iterations
         self.centroid_lr = centroid_lr
         self.centroid_convergence_eps = centroid_convergence_eps
         self.centroid_clip_threshold = centroid_clip_threshold
-        # --- Конец --- 
-        if not (0 <= self.rerank_weight <= 1): raise ValueError("rerank_weight...")
+                if not (0 <= self.rerank_weight <= 1): raise ValueError("rerank_weight...")
         
         # Размер базы знаний для проверки ID
         try:
@@ -1733,8 +1632,7 @@ class RerankingRagRetriever:
             print(f"Ошибка base_retriever.retrieve: {e}")
             return BatchEncoding({}, tensor_type=return_tensors)
 
-        # --- Этап 2: Подготовка к векторизованному переранжированию ---
-        # ИЗМЕНЕНИЕ: Убираем batch_final_scores здесь, будем создавать напрямую из combined_scores
+                # ИЗМЕНЕНИЕ: Убираем batch_final_scores здесь, будем создавать напрямую из combined_scores
         batch_final_indices_in_k = torch.full((batch_size, effective_n_docs), -1, dtype=torch.long, device=self.device)
         
         # Подготовка путей для всего батча
@@ -1762,8 +1660,7 @@ class RerankingRagRetriever:
         centroid_compute_time = time.time() - start_time
         logging.debug(f"Время вычисления центроидов: {centroid_compute_time:.4f} сек.")
         
-        # --- Этап 3: Векторизованное вычисление структурных скоров ---
-        start_time = time.time()
+                start_time = time.time()
         
         # ИЗМЕНЕНИЕ: Создадим списки для хранения скоров и индексов
         all_final_scores = []
@@ -1933,7 +1830,6 @@ class RerankingRagRetriever:
             tensor_type=return_tensors,
         )
 
-# --- Подкласс Модели RAG (Обновлено) --- 
 class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
     """Подкласс RagSequenceForGeneration для передачи question_diffs ретриверу.
        Использует стандартную логику RagModel.forward после получения 
@@ -1970,8 +1866,7 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         n_docs = n_docs if n_docs is not None else self.config.n_docs
 
-        # --- Шаг 1: Получение question_hidden_states --- 
-        if encoder_outputs is None:
+                if encoder_outputs is None:
             if input_ids is None: raise ValueError("input_ids or encoder_outputs must be given")
             question_encoder_outputs = self.rag.question_encoder(
                 input_ids=input_ids, attention_mask=attention_mask, return_dict=True,
@@ -1980,27 +1875,21 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
         else: question_encoder_outputs = encoder_outputs
         question_hidden_states = getattr(question_encoder_outputs, "pooler_output", question_encoder_outputs.last_hidden_state[:, 0, :])
         
-        # --- Шаг 2: Вызов НАШЕГО кастомного ретривера ----
-        if not isinstance(self.rag.retriever, RerankingRagRetriever):
+                if not isinstance(self.rag.retriever, RerankingRagRetriever):
             raise TypeError(f"Expected RerankingRagRetriever, got {type(self.rag.retriever)}")
         
-        # --- ИЗМЕНЕНИЕ: Передаем question_file_paths ретриверу --- 
-        retriever_outputs: BatchEncoding = self.rag.retriever(
+                retriever_outputs: BatchEncoding = self.rag.retriever(
             question_input_ids=input_ids.tolist(),
             question_hidden_states=question_hidden_states.detach().cpu().numpy(),
             n_docs=n_docs, 
             prefix=self.config.generator.prefix, 
             return_tensors="pt",
-            question_file_paths=question_file_paths # <--- Передаем сюда
+            question_file_paths=question_file_paths
         )
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        
-        # ---- Шаг 3: Извлечение данных и вызов RagModel.forward ----
-        # --- ИЗМЕНЕНИЕ: Удаляем обработку question_diffs из kwargs --- 
-        # model_kwargs = kwargs.copy()
+                
+                        # model_kwargs = kwargs.copy()
         # model_kwargs.pop("question_diffs", None) 
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        
+                
         # Вызываем self.rag.forward (RagModel)
         rag_model_output = self.rag(
             input_ids=input_ids,
@@ -2023,24 +1912,18 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
             labels=labels,
             n_docs=n_docs,
             return_dict=return_dict,
-            # --- ИЗМЕНЕНИЕ: Передаем исходные kwargs (без question_diffs/file_paths) --- 
-            **kwargs, # `question_file_paths` не входит в kwargs, так как был явным аргументом
-            # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        )
+                        **kwargs, # `question_file_paths` не входит в kwargs, так как был явным аргументом
+                    )
         
-        # ---- Шаг 4: Возвращаем результат ----
-        return rag_model_output
+                return rag_model_output
 
-    # --- ПЕРЕОПРЕДЕЛЕНИЕ: Метод generate --- 
-    @torch.no_grad()
+        @torch.no_grad()
     def generate(
         self,
         input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.LongTensor] = None,
-        # --- Наш кастомный аргумент --- 
-        question_file_paths: Optional[List[List[str]]] = None, 
-        # --- --- 
-        context_input_ids=None,
+                question_file_paths: Optional[List[List[str]]] = None, 
+                context_input_ids=None,
         context_attention_mask=None,
         doc_scores=None,
         generation_config: Optional[GenerationConfig] = None,
@@ -2051,23 +1934,19 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
         **kwargs, # Принимаем остальные стандартные аргументы generate
     ) -> Union[GenerateOutput, torch.LongTensor]:
 
-        # --- ИЗМЕНЕНИЕ: Удаляем/Сохраняем question_file_paths из kwargs --- 
-        if question_file_paths is None and "question_file_paths" in kwargs:
+                if question_file_paths is None and "question_file_paths" in kwargs:
             question_file_paths = kwargs.pop("question_file_paths")
         else: 
             kwargs.pop("question_file_paths", None)
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-
+        
         # 1. Получаем параметры генерации и извлекаем флаги
         generation_config = generation_config if generation_config is not None else self.generation_config
         kwargs["generation_config"] = generation_config 
         
-        # --- ДОБАВЛЕНИЕ: Извлекаем флаги --- 
-        output_attentions = kwargs.get("output_attentions", generation_config.output_attentions)
+                output_attentions = kwargs.get("output_attentions", generation_config.output_attentions)
         output_hidden_states = kwargs.get("output_hidden_states", generation_config.output_hidden_states)
         use_cache = kwargs.get("use_cache", generation_config.use_cache)
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-        
+                
         # 2. Подготовка model_kwargs и обработка question_diffs
         # ... (код извлечения/удаления/добавления question_diffs в model_kwargs) ...
 
@@ -2077,8 +1956,7 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
 
         # 4. Получаем question_hidden_states
         # ... 
-        # --- ДОБАВЛЕНИЕ: Вычисляем question_hidden_states --- 
-        if input_ids is None: raise ValueError("'input_ids' must be provided for generation.")
+                if input_ids is None: raise ValueError("'input_ids' must be provided for generation.")
         question_encoder_outputs = self.rag.question_encoder(
             input_ids=input_ids, 
             attention_mask=attention_mask, 
@@ -2087,45 +1965,39 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
         )
         # Используем pooler_output если есть, иначе CLS
         question_hidden_states = getattr(question_encoder_outputs, "pooler_output", question_encoder_outputs.last_hidden_state[:, 0, :])
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-
+        
         # 5. Вызов НАШЕГО ретривера
         # ... 
-        # --- ДОБАВЛЕНИЕ: Извлекаем результаты ретривера --- 
-        retriever_outputs: BatchEncoding = self.rag.retriever(
+                retriever_outputs: BatchEncoding = self.rag.retriever(
             question_input_ids=input_ids.tolist(),
-            question_hidden_states=question_hidden_states.detach().cpu().numpy(), # <--- Теперь эта переменная определена
+            question_hidden_states=question_hidden_states.detach().cpu().numpy(),
             n_docs=n_docs, 
             prefix=self.config.generator.prefix, 
             return_tensors="pt",
             question_file_paths=question_file_paths # Передаем diffs
         )
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-
+        
         # 6. Подготовка входов для генератора BART
         # ... 
-        # --- ДОБАВЛЕНИЕ: Определяем encoder_input_ids и encoder_attention_mask --- 
-        encoder_input_ids = retriever_outputs.get("context_input_ids")
+                encoder_input_ids = retriever_outputs.get("context_input_ids")
         encoder_attention_mask = retriever_outputs.get("context_attention_mask")
         if encoder_input_ids is None or encoder_attention_mask is None:
             raise ValueError("Retriever did not return 'context_input_ids' or 'context_attention_mask'.")
         # Перемещаем на нужное устройство, если нужно (хотя ретривер должен возвращать на нем)
         encoder_input_ids = encoder_input_ids.to(self.device)
         encoder_attention_mask = encoder_attention_mask.to(self.device)
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-
+        
         # 7. Подготовка kwargs для генератора BART
         generator_kwargs = {
             "encoder_outputs": ModelOutput(last_hidden_state=self.rag.generator.model.encoder(encoder_input_ids, attention_mask=encoder_attention_mask)[0]),
-            "attention_mask": encoder_attention_mask, # <--- Теперь эта переменная определена
+            "attention_mask": encoder_attention_mask,
             # Передаем извлеченные флаги
             "use_cache": use_cache,
             "output_attentions": output_attentions,
             "output_hidden_states": output_hidden_states,
         }
         # ... (код копирования bart_kwargs и bart_kwargs.update(generator_kwargs))
-        # --- ДОБАВЛЕНИЕ: Определяем bart_kwargs --- 
-        # Копируем релевантные kwargs для BART генератора
+                # Копируем релевантные kwargs для BART генератора
         # (Можно сделать более полным, если нужно больше параметров)
         bart_kwargs = {
              k: kwargs[k] 
@@ -2139,17 +2011,15 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
             bart_kwargs["generation_config"] = generation_config
         # Добавляем специфичные для RAG encoder_outputs и attention_mask
         bart_kwargs.update(generator_kwargs) 
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-        
+                
         # 8. Генерация последовательностей генератором BART
         output_sequences = self.rag.generator.generate(
             input_ids=None, # Т.к. передаем encoder_outputs
-            **bart_kwargs # <--- Теперь эта переменная определена
+            **bart_kwargs
         )
 
         # 9. Переранжирование лучей / выбор лучшей последовательности
-        # --- ДОБАВЛЕНИЕ: Подготовка повторенных входов для скоринга --- 
-        batch_size = input_ids.shape[0]
+                batch_size = input_ids.shape[0]
         n_docs = self.config.n_docs
         num_return_sequences = kwargs.get("num_return_sequences", 1)
         num_beams = kwargs.get("num_beams", 1) # Получаем num_beams
@@ -2167,21 +2037,17 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
         if question_file_paths:
             # Повторяем каждый diff n_docs * num_candidates раз
             repeated_question_diffs = [q for q in question_file_paths for _ in range(n_docs * num_candidates)]
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-        
-        # --- ИЗМЕНЕНИЕ: Повторяем question_file_paths --- 
-        # repeated_question_file_paths = None # Старое
+                
+                # repeated_question_file_paths = None # Старое
         # if question_diffs: # Старое
         #     repeated_question_file_paths = [q for q in question_diffs for _ in range(n_docs * num_candidates)] # Старое
         repeated_question_file_paths = None
         if question_file_paths:
             # Повторяем каждый список путей n_docs * num_candidates раз
             repeated_question_file_paths = [p for p in question_file_paths for _ in range(n_docs * num_candidates)]
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        
+                
         # Вызываем НАШ forward для скоринга
-        # --- ИЗМЕНЕНИЕ: Передаем repeated_question_file_paths --- 
-        forward_kwargs = {
+                forward_kwargs = {
              "input_ids": repeated_input_ids,
              "attention_mask": repeated_attention_mask,
              "labels": output_sequences, 
@@ -2190,7 +2056,7 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
              "output_attentions": output_attentions,
              "output_hidden_states": output_hidden_states,
              "use_cache": False, 
-             "question_file_paths": repeated_question_file_paths, # <--- Передаем сюда
+             "question_file_paths": repeated_question_file_paths,
              "return_dict": True,
              # Передаем данные из ретривера для forward
              "context_input_ids": retriever_outputs.get("context_input_ids").repeat_interleave(num_candidates, dim=0),
@@ -2198,12 +2064,10 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
              "doc_scores": retriever_outputs.get("doc_scores").repeat_interleave(num_candidates, dim=0) 
         }
         outputs = self.forward(**forward_kwargs)
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-
+        
         # ... (Заглушка выбора лучших)
         # return output_sequences[:batch_size * kwargs.get("num_return_sequences", 1)]
-        # --- ЗАМЕНА: Реализуем выбор лучших лучей на основе скоров (лоссов) --- 
-        # Получаем лосс для каждой сгенерированной последовательности (NLL Loss)
+                # Получаем лосс для каждой сгенерированной последовательности (NLL Loss)
         # outputs.loss должен иметь размер (batch_size * n_docs * num_candidates)
         # Где num_candidates = num_beams * num_return_sequences (если они есть)
         if outputs.loss is None:
@@ -2233,21 +2097,16 @@ class RerankingRagSequenceForGeneration(RagSequenceForGeneration):
         
         # Возвращаем финальные последовательности в виде (batch_size * num_return_sequences, seq_len)
         return final_sequences.view(-1, output_sequences.shape[-1])
-        # --- КОНЕЦ ЗАМЕНЫ --- 
-
-    # --- КОНЕЦ ПЕРЕОПРЕДЕЛЕНИЯ ---
-
-# --- Инициализация модели RAG (Обновлено v6) ---
+        
+    
 def initialize_reranking_rag_model(config: dict):
     # ... (код до инициализации финальной модели)
     
-    # --- Инициализация переменных --- 
-    rag_config, tokenizer, question_encoder, generator = None, None, None, None
+        rag_config, tokenizer, question_encoder, generator = None, None, None, None
     base_retriever, structural_embeddings_kb = None, None
     reranking_retriever_wrapper = None
     model = None
-    # --- КОНЕЦ Инициализации --- 
-    
+        
     # ... (проверки файлов)
 
     print(f"Иниц. RAG ({config['rag_model_name']}) с переранж. ...")
@@ -2287,8 +2146,7 @@ def initialize_reranking_rag_model(config: dict):
 
     # 3. Загрузка Структурных Эмбеддингов
     try:
-        # --- ИЗМЕНЕНИЕ: Загружаем предвычисленные эмбеддинги --- 
-        logging.info(f"Загрузка структурных эмбеддингов из {config['structural_embeddings_output_path']}...")
+                logging.info(f"Загрузка структурных эмбеддингов из {config['structural_embeddings_output_path']}...")
         structural_embeddings_kb = torch.load(config['structural_embeddings_output_path'], map_location='cpu')
         logging.info(f"Структурные эмбеддинги загружены, размер: {structural_embeddings_kb.shape}")
         
@@ -2299,8 +2157,7 @@ def initialize_reranking_rag_model(config: dict):
                               f"не совпадает с размером KB Dataset ({kb_size_retriever})! "
                               f"Убедитесь, что prepare_dataset.py отработал корректно и использовался тот же JSONL.")
         logging.info("Размер структурных эмбеддингов соответствует размеру KB.")
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-    except FileNotFoundError:
+            except FileNotFoundError:
          logging.error(f"Файл структурных эмбеддингов не найден: {config['structural_embeddings_output_path']}. Запустите prepare_dataset.py.")
          return None, None
     except Exception as e: 
@@ -2310,8 +2167,7 @@ def initialize_reranking_rag_model(config: dict):
     # 4. Инициализация НАШЕЙ ОБЕРТКИ RerankingRagRetriever
     print("Инициализация RerankingRagRetriever (обертки)...")
     try:
-        # --- ИЗМЕНЕНИЕ: Передаем параметры центроида из config --- 
-        reranking_retriever_wrapper = RerankingRagRetriever(
+                reranking_retriever_wrapper = RerankingRagRetriever(
             base_rag_retriever=base_retriever,
             structural_embeddings=structural_embeddings_kb,
             k_to_rerank=config['k_to_rerank'], 
@@ -2327,8 +2183,7 @@ def initialize_reranking_rag_model(config: dict):
             device=config['device'],
             learnable_weight=True
         )
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        print("RerankingRagRetriever (обертка) создан.")
+                print("RerankingRagRetriever (обертка) создан.")
     except Exception as e: 
         # ... (обработка ошибок) ...
         pass # Или return None, None
@@ -2340,8 +2195,7 @@ def initialize_reranking_rag_model(config: dict):
     # 5. Инициализация Финальной Модели RAG с ЗАМЕНОЙ ретривера
     try:
         print("Сборка финальной модели RerankingRagSequenceForGeneration...")
-        # --- ИЗМЕНЕНИЕ: Создаем стандартную модель, затем меняем ретривер --- 
-        # Сначала создаем стандартную модель RagSequenceForGeneration
+                # Сначала создаем стандартную модель RagSequenceForGeneration
         model = RagSequenceForGeneration.from_pretrained(
              config['rag_model_name'],
              config=rag_config, # Передаем конфиг
@@ -2352,29 +2206,23 @@ def initialize_reranking_rag_model(config: dict):
         # Теперь ЗАМЕНЯЕМ ретривер на нашу обертку
         model.rag.retriever = reranking_retriever_wrapper
         
-        # --- ДОБАВЛЕНИЕ: Патчим метод generate у внутреннего генератора --- 
-        # Это решает проблему, когда оригинальный RAG все равно пытается вызвать
+                # Это решает проблему, когда оригинальный RAG все равно пытается вызвать
         # generator.generate с question_diffs, который пришел из Trainer
         original_generator_generate = model.rag.generator.generate
         
         def patched_generator_generate(*args, **kwargs):
-            # --- ИЗМЕНЕНИЕ: Удаляем ОБА ключа: question_file_paths И question_diffs --- 
-            if "question_file_paths" in kwargs:
+                        if "question_file_paths" in kwargs:
                 kwargs.pop("question_file_paths", None)
             if "question_diffs" in kwargs: # Добавляем удаление старого ключа
                 kwargs.pop("question_diffs", None)
-            # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-            return original_generator_generate(*args, **kwargs)
+                        return original_generator_generate(*args, **kwargs)
         
         # Заменяем метод generate у внутреннего генератора
         print("Патчим метод generate у внутреннего генератора BART...")
         model.rag.generator.generate = patched_generator_generate
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-        
-        # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-        
-        # --- ДОБАВЛЕНИЕ: Явно устанавливаем generation_config --- 
-        # Это гарантирует, что Trainer найдет его и не будет ошибки NoneType
+                
+                
+                # Это гарантирует, что Trainer найдет его и не будет ошибки NoneType
         try:
             # Пытаемся создать из конфигурации модели (должна быть RagConfig)
             if hasattr(model, 'config') and model.config is not None:
@@ -2392,12 +2240,10 @@ def initialize_reranking_rag_model(config: dict):
                 print(f"КРИТИЧЕСКАЯ ОШИБКА: Не удалось установить GenerationConfig: {e2}")
                 # Можно вернуть None или поднять исключение, если это критично
                 # return None, None 
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-                
+                        
         print("Кастомный ретривер успешно установлен.")
         
-        # --- ДОБАВЛЕНИЕ: Устанавливаем pad_token_id в основной конфиг модели --- 
-        # Это нужно для функции _pad_tensors_to_max_len в Seq2SeqTrainer
+                # Это нужно для функции _pad_tensors_to_max_len в Seq2SeqTrainer
         if not hasattr(model.config, 'pad_token_id') or model.config.pad_token_id is None:
             pad_token_id_source = None
             if hasattr(generator, 'config') and generator.config.pad_token_id is not None:
@@ -2417,8 +2263,7 @@ def initialize_reranking_rag_model(config: dict):
             else:
                  print("КРИТИЧЕСКАЯ ОШИБКА: Не удалось определить pad_token_id для model.config. Паддинг в Trainer может не работать.")
                  # return None, None # Можно раскомментировать, если это фатально
-        # --- КОНЕЦ ДОБАВЛЕНИЯ --- 
-                     
+                             
         model.to(config['device'])
         print("Модель RerankingRagSequenceForGeneration успешно инициализирована.")
         return tokenizer, model
@@ -2426,7 +2271,6 @@ def initialize_reranking_rag_model(config: dict):
         print(f"Ошибка инициализации/замены ретривера в RagSequenceForGeneration: {e}")
         import traceback; traceback.print_exc(); return None, None
         
-# --- Вычисление метрик --- 
 
 def postprocess_text(preds, labels):
     """Очистка текста и добавление переносов для ROUGE/METEOR."""
@@ -2453,8 +2297,7 @@ def compute_metrics(eval_preds, tokenizer=None):
     preds, labels = eval_preds
     if isinstance(preds, tuple): preds = preds[0]
     
-    # --- Предобработка preds и labels перед декодированием ---
-    # Получаем ID паддинга из токенизатора
+        # Получаем ID паддинга из токенизатора
     pad_token_id = None
     
     if tokenizer is not None:
@@ -2564,21 +2407,17 @@ def compute_metrics(eval_preds, tokenizer=None):
         logging.warning(f"Не удалось добавить значение кривизны в метрики: {e}")
     
     return metric_results
-# --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
-# --- ДОБАВЛЕНИЕ: Кастомный Callback для логирования метрик ---
 class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlyStopping, чтобы не потерять его
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # --- ИЗМЕНЕНИЕ: Используем пути из CONFIG ---
-        base_dir = CONFIG.get("prepared_data_dir", ".")
+                base_dir = CONFIG.get("prepared_data_dir", ".")
         figures_base_dir = CONFIG.get("figures_dir", os.path.join(base_dir, "figures")) # Новая настройка
         logs_base_dir = CONFIG.get("logs_dir", os.path.join(base_dir, "logs")) # Новая настройка
 
         self.logs_dir = logs_base_dir
         self.figures_dir = figures_base_dir
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-        os.makedirs(self.logs_dir, exist_ok=True)
+                os.makedirs(self.logs_dir, exist_ok=True)
         os.makedirs(self.figures_dir, exist_ok=True)
 
         self.viz_utils_available = _viz_utils_available
@@ -2594,8 +2433,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
         if metrics is not None and state.is_world_process_zero:
              metrics_rounded = {k: round(v, 4) if isinstance(v, float) else v for k,v in metrics.items()}
              logging.info(f"Evaluation metrics: {metrics_rounded}")
-             # --- ДОБАВЛЕНИЕ: Логируем адаптивные параметры после оценки ---
-             try:
+                          try:
                  model = kwargs.get("model", None)
                  # Используем state.epoch, так как он обновляется до on_evaluate
                  current_eval_epoch = int(state.epoch) if state.epoch is not None else self.current_epoch
@@ -2608,16 +2446,13 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
                      logging.debug(f"Статистика модели для эпохи {current_eval_epoch} сохранена.")
              except Exception as e:
                  logging.warning(f"Не удалось залогировать статистику модели: {e}", exc_info=True)
-             # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-
+             
     def on_epoch_end(self, args, state, control, **kwargs):
         super().on_epoch_end(args, state, control, **kwargs)
 
-        # --- ИЗМЕНЕНИЕ: Обновляем current_epoch из state ---
-        self.current_epoch = int(state.epoch) # state.epoch содержит номер завершенной эпохи
+                self.current_epoch = int(state.epoch) # state.epoch содержит номер завершенной эпохи
         logging.info(f"Завершена эпоха {self.current_epoch}")
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
+        
         #trainer = kwargs.get("trainer", None)
         trainer = getattr(self, "trainer", None)  # Получаем Trainer из callback handler
         # Добавляем проверку state.is_world_process_zero, чтобы избежать дублирования
@@ -2626,8 +2461,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
 
         model = trainer.model
 
-        # --- Логирование корреляции Спирмена ---
-        try:
+                try:
             if hasattr(trainer, "eval_dataset") and trainer.eval_dataset is not None:
                 eval_dataloader = trainer.get_eval_dataloader(trainer.eval_dataset)
                 device = trainer.args.device
@@ -2700,8 +2534,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
         except Exception as e:
             logging.warning(f"Ошибка при вычислении/логировании корреляции Спирмена: {e}", exc_info=True)
 
-        # --- Логирование центроидов ---
-        try:
+                try:
             logging.info(f"Эпоха {self.current_epoch}: Проверка условия для логирования центроидов.")
             logging.info(f"Эпоха {self.current_epoch}: self.viz_utils_available = {self.viz_utils_available}")
             logging.info(f"Эпоха {self.current_epoch}: self.current_epoch % self.log_centroids_every = {self.current_epoch % self.log_centroids_every}")
@@ -2801,8 +2634,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
 
         logging.info("Завершение обучения. Генерация финальных визуализаций...")
 
-        # --- Финальная анимация дрейфа центроидов ---
-        try:
+                try:
             centroid_files = glob.glob(os.path.join(self.logs_dir, "centroids_epoch*.npy"))
             if len(centroid_files) >= 2:
                 viz_utils.create_centroid_drift_animation(
@@ -2814,8 +2646,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
         except Exception as e:
             logging.warning(f"Ошибка при создании финальной анимации: {e}")
 
-        # --- Финальный график корреляции Спирмена ---
-        try:
+                try:
             spearman_log = os.path.join(self.logs_dir, "spearman.csv")
             if os.path.exists(spearman_log):
                 viz_utils.plot_spearman_correlation(
@@ -2828,8 +2659,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
         except Exception as e:
             logging.warning(f"Ошибка при создании финального графика корреляции: {e}")
 
-        # --- Финальный график Top-k accuracy ---
-        try:
+                try:
             topk_log = os.path.join(self.logs_dir, "topk.csv")
             if os.path.exists(topk_log):
                  viz_utils.plot_topk_accuracy(
@@ -2844,8 +2674,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
         except Exception as e:
             logging.warning(f"Ошибка при создании финального графика Top-k accuracy: {e}")
 
-        # --- Финальная тепловая карта смешивания ---
-        try:
+                try:
             mixing_log = os.path.join(self.logs_dir, "mixing_scores.csv")
             if os.path.exists(mixing_log):
                  viz_utils.plot_mixing_heatmap(
@@ -2860,8 +2689,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
         except Exception as e:
             logging.warning(f"Ошибка при создании финальной тепловой карты смешивания: {e}")
 
-        # --- Финальное сохранение статистики модели ---
-        try:
+                try:
             model = kwargs.get("model", None)
             if model is not None:
                 final_epoch = int(state.epoch) if state.epoch is not None else self.current_epoch
@@ -2876,9 +2704,7 @@ class LoggingCallback(EarlyStoppingCallback): # Наследуем от EarlySto
         except Exception as e:
             logging.warning(f"Не удалось сохранить финальную статистику модели: {e}", exc_info=True)
 
-# --- Конец класса LoggingCallback ---
 
-# --- ДОБАВЛЕНИЕ: Функция для вычисления корреляции Спирмена ---
 def spearmanr(a, b, axis=0):
     """
     Вычисляет корреляцию Спирмена между двумя наборами данных.
@@ -2946,9 +2772,7 @@ def spearmanr(a, b, axis=0):
     
     return rs
 
-# --- КОНЕЦ ДОБАВЛЕНИЯ ---
 
-# --- ДОБАВЛЕНИЕ: Улучшение метода для вычисления потерь с учетом новых регуляризаций ---
 def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
     """
     Вычисляет потерю с добавлением регуляризации на основе корреляции Спирмена 
@@ -3009,18 +2833,14 @@ def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=N
     # Возвращаем результат
     return (loss, outputs) if return_outputs else loss
 
-# --- КОНЕЦ ДОБАВЛЕНИЯ: Улучшение метода compute_loss ---
 
-# --- Основной блок --- 
 def main():
     
-    # --- ДОБАВЛЕНИЕ: Настройка логирования в файл --- 
-    log_dir = CONFIG.get("logging_dir", os.path.join(CONFIG["prepared_data_dir"], 'logs'))
+        log_dir = CONFIG.get("logging_dir", os.path.join(CONFIG["prepared_data_dir"], 'logs'))
     os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, "training.log")
     
-    # --- ИЗМЕНЕНИЕ: Явная настройка логгера --- 
-    log_formatter = logging.Formatter(
+        log_formatter = logging.Formatter(
         fmt="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
@@ -3029,55 +2849,43 @@ def main():
     root_logger.handlers.clear() # Очищаем существующие обработчики (на всякий случай)
     
     # Добавляем обработчик для вывода в консоль
-    # --- ИЗМЕНЕНИЕ: Указываем encoding='utf-8' --- 
-    stream_handler = logging.StreamHandler()
+        stream_handler = logging.StreamHandler()
     stream_handler.encoding = 'utf-8' # Устанавливаем кодировку для консоли
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-    stream_handler.setFormatter(log_formatter)
+        stream_handler.setFormatter(log_formatter)
     root_logger.addHandler(stream_handler)
     
     # Добавляем обработчик для вывода в файл
     try:
-        # --- ИЗМЕНЕНИЕ: Указываем encoding='utf-8' --- 
-        file_handler = logging.FileHandler(log_file_path, encoding='utf-8') # Устанавливаем кодировку для файла
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-        file_handler.setFormatter(log_formatter)
+                file_handler = logging.FileHandler(log_file_path, encoding='utf-8') # Устанавливаем кодировку для файла
+                file_handler.setFormatter(log_formatter)
         root_logger.addHandler(file_handler)
         print(f"Логирование настроено. Файл логов: {log_file_path}")
     except Exception as e:
         print(f"Ошибка настройки файлового логгера: {e}")
-    # --- КОНЕЦ ИЗМЕНЕНИЯ --- 
-    
+        
     # Устанавливаем уровень логера transformers (чтобы видеть его сообщения)
     transformers_logger = logging.getLogger("transformers")
     transformers_logger.setLevel(logging.DEBUG) # Устанавливаем DEBUG и для него
-    transformers_logger.propagate = True # <--- ИЗМЕНЕНО на True
+    transformers_logger.propagate = True
     
-    # --- ДОБАВЛЕНИЕ: Явно добавляем наши обработчики к логгеру transformers --- 
-    # --- (Оставляем этот блок на случай, если propagate=True не сработает) --- 
-    if not any(isinstance(h, logging.StreamHandler) for h in transformers_logger.handlers):
+            if not any(isinstance(h, logging.StreamHandler) for h in transformers_logger.handlers):
         transformers_logger.addHandler(stream_handler)
     if not any(isinstance(h, logging.FileHandler) for h in transformers_logger.handlers):
         try:
             transformers_logger.addHandler(file_handler)
         except Exception as e:
             print(f"Не удалось добавить file_handler к логгеру transformers: {e}")
-    # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-    
-    # --- ДОБАВЛЕНИЕ: Понижаем уровень для модуля ретривера --- 
-    # Чтобы скрыть INFO сообщения о времени поиска в FAISS
+        
+        # Чтобы скрыть INFO сообщения о времени поиска в FAISS
     logging.getLogger("transformers.models.rag.retrieval_rag").setLevel(logging.WARNING)
-    # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-    
-    # --- ДОБАВЛЕНИЕ: Настройка директорий для визуализации --- 
-    figures_dir = os.path.join(CONFIG["prepared_data_dir"], "figures")
+        
+        figures_dir = os.path.join(CONFIG["prepared_data_dir"], "figures")
     os.makedirs(figures_dir, exist_ok=True)
     if _viz_utils_available:
         logging.info(f"Модуль визуализации доступен. Графики будут сохраняться в {figures_dir}")
     else:
         logging.warning("Модуль визуализации недоступен. Графики и анимации не будут создаваться.")
-    # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-    
+        
     # 0. Подготовка ВСЕХ данных
     print("--- Шаг 0: Подготовка данных ---")
     data_ready = prepare_all_data(CONFIG)
@@ -3109,15 +2917,13 @@ def main():
                 print(f"Тренировочный датасет создан, размер: {len(tokenized_train_dataset)}")
                 print(f"Валидационный датасет создан, размер: {len(tokenized_val_dataset)}")
 
-                # --- НОВОЕ: Используем только половину валидационного набора для ускорения оценки ---
-                val_length = len(tokenized_val_dataset)
+                                val_length = len(tokenized_val_dataset)
                 max_val_samples = 7500
                 val_samples_to_use = min(val_length, max_val_samples)
                 print(f"Используем только {val_samples_to_use} примеров из {val_length} для валидации (ограничено {max_val_samples})")
                 # Создаем подмножество валидационного набора с первыми half_val_length примерами
                 tokenized_val_dataset = tokenized_val_dataset.select(range(val_samples_to_use))
-                # --- КОНЕЦ НОВОГО КОДА ---
-
+                
                 # 3. Настройка Data Collator
                 data_collator = CustomDataCollatorWithPaths(
                     tokenizer=tokenizer.generator, 
@@ -3128,8 +2934,7 @@ def main():
                 print("Кастомный Data Collator настроен.")
                 
                 # 4. Настройка Training Arguments (Используем Seq2SeqTrainingArguments)
-                # --- ИЗМЕНЕНИЕ: Используем значения из CONFIG ---
-                output_dir = os.path.join(CONFIG["prepared_data_dir"], CONFIG.get("output_dir_base", "training_output"))
+                                output_dir = os.path.join(CONFIG["prepared_data_dir"], CONFIG.get("output_dir_base", "training_output"))
                 training_args = Seq2SeqTrainingArguments(
                     output_dir=output_dir,
                     overwrite_output_dir=True,
@@ -3157,11 +2962,9 @@ def main():
                     generation_max_length=CONFIG.get("generation_max_length", 128),
                     generation_num_beams=CONFIG.get("generation_num_beams", 1)
                 )
-                # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-                print("Seq2SeqTraining Arguments настроены.")
+                                print("Seq2SeqTraining Arguments настроены.")
                 
-                # --- НАЧАЛО: Отрисовка начального диска Пуанкаре ---
-                if _viz_utils_available:
+                                if _viz_utils_available:
                     try:
                         # Загружаем структурные эмбеддинги 
                         struct_emb_path = CONFIG["structural_embeddings_output_path"]
@@ -3186,11 +2989,9 @@ def main():
                             logging.info(f"Начальный диск Пуанкаре отрисован")
                     except Exception as e:
                         logging.warning(f"Ошибка при отрисовке начального диска Пуанкаре: {e}")
-                # --- КОНЕЦ: Отрисовка начального диска Пуанкаре ---
-                
+                                
                 # 5. Создание и запуск Тренера (Используем RerankingSeq2SeqTrainer)
-                # --- ИЗМЕНЕНИЕ: Используем наш расширенный LoggingCallback ---
-                callbacks = []
+                                callbacks = []
                 
                 # Добавляем наш LoggingCallback для визуализации и логирования
                 logging_callback = LoggingCallback(early_stopping_patience=CONFIG.get("early_stopping_patience", 3))
@@ -3220,8 +3021,7 @@ def main():
                     print("--- Обучение завершено --- ")
                     print(train_result)
                     
-                    # --- ДОБАВЛЕНИЕ: Создание финальных визуализаций после обучения ---
-                    if _viz_utils_available:
+                                        if _viz_utils_available:
                         try:
                             # Сбор финальной статистики модели
                             viz_utils.save_model_stats(
@@ -3251,8 +3051,7 @@ def main():
                             logging.info("Финальные визуализации созданы")
                         except Exception as e:
                             logging.warning(f"Ошибка при создании финальных визуализаций: {e}")
-                    # --- КОНЕЦ ДОБАВЛЕНИЯ ---
-                    
+                                        
                 except Exception as e:
                     print(f"\nОшибка во время обучения: {e}")
                     import traceback
