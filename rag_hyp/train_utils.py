@@ -6,10 +6,8 @@ import evaluate
 import numpy as np
 import torch
 from transformers import (
-    RagConfig,
     RagTokenizer,
-    DPRQuestionEncoder,
-    BartForConditionalGeneration,
+
     RagRetriever,
     Seq2SeqTrainingArguments,
 )
@@ -22,6 +20,12 @@ from .reranking import (
 )
 
 from .model_utils import CustomDataCollatorWithPaths
+from .custom_models import (
+    RerankingRagRetriever,
+    RerankingRagSequenceForGeneration,
+    RerankingSeq2SeqTrainer,
+    LoggingCallback,
+)
 from .config import CONFIG
 from .data_utils import (
     prepare_all_data,
@@ -34,32 +38,12 @@ def initialize_reranking_rag_model(config: dict):
     """Load the RAG model and wrap the retriever for reranking."""
     tokenizer = RagTokenizer.from_pretrained(config["rag_model_name"])
 
-    base_retriever = RagRetriever.from_pretrained(
         config["rag_model_name"],
         index_name="custom",
         passages_path=config["knowledge_base_dataset_path"],
         index_path=config["faiss_index_path"],
     )
 
-    structural_embeddings = torch.load(
-        config["structural_embeddings_output_path"], map_location="cpu"
-    )
-
-    rerank_retriever = RerankingRagRetriever(
-        base_retriever,
-        structural_embeddings,
-        k_to_rerank=config["k_to_rerank"],
-        n_final=config["n_final"],
-        rerank_weight=config["rerank_weight"],
-    )
-
-    model = RerankingRagSequenceForGeneration.from_pretrained(
-        config["rag_model_name"]
-    )
-    model.rag.retriever = rerank_retriever
-    model.to(config["device"])
-
-    return tokenizer, model
 
 
 def postprocess_text(preds, labels):
@@ -133,5 +117,6 @@ def main_training_loop(config: dict):
         compute_metrics=partial(compute_metrics, tokenizer=tokenizer.generator),
         callbacks=[LoggingCallback(early_stopping_patience=config.get("early_stopping_patience", 3))],
     )
+    trainer.add_callback(LoggingCallback())
     trainer.train()
     return trainer

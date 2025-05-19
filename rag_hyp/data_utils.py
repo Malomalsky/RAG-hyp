@@ -201,10 +201,10 @@ def build_faiss_index(embeddings: np.ndarray, index_path: str):
     """Строит и сохраняет FAISS индекс."""
     if embeddings is None or embeddings.size == 0:
         print("Ошибка: Нет эмбеддингов для построения FAISS индекса.")
-        return False # Возвращаем False при ошибке
+        return False
     if os.path.exists(index_path):
         print(f"FAISS индекс уже существует: {index_path}. Пропуск построения.")
-        return True # Возвращаем True, если существует
+        return True
         
     print("Построение FAISS индекса...")
     try:
