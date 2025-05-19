@@ -46,7 +46,7 @@ def clean_data(dataset):
                 diff_ids.append(str(diff_id)) # Сохраняем ID как строку (хэш)
                 diffs.append(str(diff).replace('<nl>', '\n').strip())
                 msgs.append(' '.join(str(msg).replace('<nl>', '\n').split()))
-            except (ValueError, TypeError): # Оставляем на случай других проблем
+            except (ValueError, TypeError):
                  pass 
     print(f"Осталось {len(diffs)} валидных записей после очистки.")
     return diffs, msgs, diff_ids
@@ -183,9 +183,7 @@ def generate_semantic_embeddings(diffs: List[str], tokenizer: AutoTokenizer, mod
             
             # Записываем текущий батч в предвыделенный массив
             embeddings_np[start_index:end_index] = batch_embeddings_np
-            # all_embeddings.append(batch_embeddings.cpu().numpy()) # Старая строка
             
-        # embeddings_np = np.vstack(all_embeddings).astype(np.float32) # Старая строка
         
         # Проверяем, был ли массив создан (на случай пустого входа)
         if embeddings_np is None:
@@ -515,7 +513,7 @@ def load_split_data(config: dict, split_name: str) -> Optional[Dict]:
         
         num_entries = len(split_data.get('messages', [])) # Определяем количество записей
         
-        # Оставляем diffs под ключом question_diffs на случай, если где-то используются
+       
         if 'diffs' in split_data:
             split_data['question_diffs'] = split_data['diffs'] 
         else:
