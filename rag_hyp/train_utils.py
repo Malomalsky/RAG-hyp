@@ -8,12 +8,17 @@ import torch
 from transformers import (
     RagConfig,
     RagTokenizer,
-    RagSequenceForGeneration,
     DPRQuestionEncoder,
     BartForConditionalGeneration,
     RagRetriever,
-    Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
+)
+
+from .reranking import (
+    RerankingRagRetriever,
+    RerankingRagSequenceForGeneration,
+    RerankingSeq2SeqTrainer,
+    LoggingCallback,
 )
 
 from .model_utils import CustomDataCollatorWithPaths
@@ -26,9 +31,34 @@ from .data_utils import (
 
 
 def initialize_reranking_rag_model(config: dict):
+    """Load the RAG model and wrap the retriever for reranking."""
     tokenizer = RagTokenizer.from_pretrained(config["rag_model_name"])
-    model = RagSequenceForGeneration.from_pretrained(config["rag_model_name"])
+
+    base_retriever = RagRetriever.from_pretrained(
+        config["rag_model_name"],
+        index_name="custom",
+        passages_path=config["knowledge_base_dataset_path"],
+        index_path=config["faiss_index_path"],
+    )
+
+    structural_embeddings = torch.load(
+        config["structural_embeddings_output_path"], map_location="cpu"
+    )
+
+    rerank_retriever = RerankingRagRetriever(
+        base_retriever,
+        structural_embeddings,
+        k_to_rerank=config["k_to_rerank"],
+        n_final=config["n_final"],
+        rerank_weight=config["rerank_weight"],
+    )
+
+    model = RerankingRagSequenceForGeneration.from_pretrained(
+        config["rag_model_name"]
+    )
+    model.rag.retriever = rerank_retriever
     model.to(config["device"])
+
     return tokenizer, model
 
 
@@ -93,7 +123,7 @@ def main_training_loop(config: dict):
         report_to="none",
         predict_with_generate=True,
     )
-    trainer = Seq2SeqTrainer(
+    trainer = RerankingSeq2SeqTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
@@ -101,6 +131,7 @@ def main_training_loop(config: dict):
         tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=partial(compute_metrics, tokenizer=tokenizer.generator),
+        callbacks=[LoggingCallback(early_stopping_patience=config.get("early_stopping_patience", 3))],
     )
     trainer.train()
     return trainer
