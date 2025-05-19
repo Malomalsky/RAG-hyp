@@ -7,21 +7,14 @@ import math
 import hashlib
 import logging
 
-# --- Глобальные настройки и объекты --- 
-
 DEFAULT_DTYPE = torch.float32
 
-# Инициализация многообразия Диска Пуанкаре с кривизной -1 (c=1)
 poincare_ball = geoopt.PoincareBall(c=1.0)
 try:
-    # Попытка установки requires_grad_
-    poincare_ball.k.requires_grad_(False) # Убедимся, что кривизна не обучается
+    poincare_ball.k.requires_grad_(False)
 except AttributeError:
-    # Если k - property без setter'а, просто продолжаем
     print("Info: poincare_ball.k не имеет setter'а, requires_grad_ не установлен.")
     pass
-
-# --- Гиперболические функции --- 
 
 def project_to_poincare_ball(vectors: torch.Tensor, manifold: geoopt.PoincareBall = poincare_ball, dim: int = -1) -> torch.Tensor:
     """
@@ -60,15 +53,9 @@ def poincare_distance(vectors1: torch.Tensor, vectors2: torch.Tensor, manifold: 
     vec1_typed = vectors1.to(DEFAULT_DTYPE)
     vec2_typed = vectors2.to(DEFAULT_DTYPE)
     
-    # Для безопасности можно добавить проекцию перед вычислением расстояния,
-    # но предполагаем, что векторы уже спроецированы.
-    # vec1_typed = manifold.projx(vec1_typed, dim=dim)
-    # vec2_typed = manifold.projx(vec2_typed, dim=dim)
     
     dist = manifold.dist(vec1_typed, vec2_typed, dim=dim, keepdim=keepdim)
     return dist
-
-# --- Функции для работы с путями и Diff --- 
 
 def extract_file_paths(diff_string: str) -> Set[str]:
     """
@@ -82,7 +69,6 @@ def extract_file_paths(diff_string: str) -> Set[str]:
         Множество уникальных путей измененных файлов.
     """
     if not isinstance(diff_string, str):
-        # print(f"Warning: extract_file_paths ожидал строку, получил {type(diff_string)}. Возвращается пустое множество.")
         return set()
     # Ищем строки вида 'ppp b /path/to/file<nl>'
     matches = re.findall(r'^ppp b /(.*?)<nl>', diff_string, re.MULTILINE)
@@ -167,8 +153,6 @@ def calculate_hyperbolic_centroid(points_list: List[torch.Tensor],
                                   eps: float = 1e-4,
                                   clip_threshold: float = 0.999) -> torch.Tensor:
     """Вычисляет гиперболический центроид (среднее Фреше) на диске Пуанкаре."""
-    # Адаптация параметров к размерности (можно оставить или убрать, если задаются в CONFIG)
-    # ... (код адаптации lr/max_iterations) ...
     
     if not points_list:
         return torch.zeros(embedding_dim, dtype=DEFAULT_DTYPE)
