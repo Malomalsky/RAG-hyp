@@ -6,17 +6,18 @@ import evaluate
 import numpy as np
 import torch
 from transformers import (
-    RagConfig,
     RagTokenizer,
-    RagSequenceForGeneration,
-    DPRQuestionEncoder,
-    BartForConditionalGeneration,
     RagRetriever,
-    Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
 )
 
 from .model_utils import CustomDataCollatorWithPaths
+from .custom_models import (
+    RerankingRagRetriever,
+    RerankingRagSequenceForGeneration,
+    RerankingSeq2SeqTrainer,
+    LoggingCallback,
+)
 from .config import CONFIG
 from .data_utils import (
     prepare_all_data,
@@ -27,9 +28,23 @@ from .data_utils import (
 
 def initialize_reranking_rag_model(config: dict):
     tokenizer = RagTokenizer.from_pretrained(config["rag_model_name"])
-    model = RagSequenceForGeneration.from_pretrained(config["rag_model_name"])
-    model.to(config["device"])
-    return tokenizer, model
+    base_model = RerankingRagSequenceForGeneration.from_pretrained(config["rag_model_name"])
+    retriever = RagRetriever.from_pretrained(
+        config["rag_model_name"],
+        index_name="custom",
+        passages_path=config["knowledge_base_dataset_path"],
+        index_path=config["faiss_index_path"],
+    )
+    struct_embeds = torch.load(config["structural_embeddings_output_path"], map_location="cpu")
+    reranking = RerankingRagRetriever(
+        base_retriever=retriever,
+        structural_embeddings=struct_embeds.to(config["device"]),
+        rerank_weight=config.get("rerank_weight", 0.2),
+        n_docs=config.get("n_final", 5),
+    )
+    base_model.rag.retriever = reranking
+    base_model.to(config["device"])
+    return tokenizer, base_model
 
 
 def postprocess_text(preds, labels):
@@ -93,7 +108,7 @@ def main_training_loop(config: dict):
         report_to="none",
         predict_with_generate=True,
     )
-    trainer = Seq2SeqTrainer(
+    trainer = RerankingSeq2SeqTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
@@ -102,5 +117,6 @@ def main_training_loop(config: dict):
         data_collator=data_collator,
         compute_metrics=partial(compute_metrics, tokenizer=tokenizer.generator),
     )
+    trainer.add_callback(LoggingCallback())
     trainer.train()
     return trainer

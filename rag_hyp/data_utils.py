@@ -62,10 +62,7 @@ def split_dataset(diffs, messages, diff_ids, file_paths_list, config: dict):
     if expected_total == 0: print("Ошибка: Нет данных для разделения."); return None
     if abs(train_size + val_size + test_size - 1.0) > 1e-6:
         print(f"Warning: Сумма размеров ({train_size}+{val_size}+{test_size}) != 1. Проверьте *_split_ratio в CONFIG.")
-        # Можно добавить нормализацию или вернуть ошибку
-        # total = train_size + val_size + test_size
-        # train_size /= total; val_size /= total; test_size /= total
-        return None # Лучше остановить, если размеры неправильные
+        return None
         
     train_val_diffs, test_diffs, \
     train_val_msgs, test_msgs, \
@@ -155,12 +152,11 @@ def generate_semantic_embeddings(diffs: List[str], tokenizer: AutoTokenizer, mod
         
     question_encoder_max_length = config.get("question_encoder_max_length", 512) 
     
-    embeddings_np = None # Инициализируем None
+    embeddings_np = None
     embedding_dim = -1
-    # all_embeddings = [] # Убираем список для накопления
     
     num_batches = (len(diffs) + batch_size - 1) // batch_size
-    model.eval() # Убедимся, что модель в режиме eval
+    model.eval()
     try:
         for i in tqdm(range(num_batches), desc="Генерация семантических эмбеддингов"):
             start_index = i * batch_size
@@ -175,23 +171,19 @@ def generate_semantic_embeddings(diffs: List[str], tokenizer: AutoTokenizer, mod
             batch_embeddings = model_output.pooler_output if hasattr(model_output, 'pooler_output') and model_output.pooler_output is not None else model_output.last_hidden_state[:, 0, :]
             batch_embeddings_np = batch_embeddings.cpu().numpy()
             
-            # Определяем размерность и создаем массив при первом батче
             if embeddings_np is None:
                 embedding_dim = batch_embeddings_np.shape[1]
                 embeddings_np = np.empty((total_embeddings, embedding_dim), dtype=np.float32)
                 print(f"Определена размерность эмбеддинга: {embedding_dim}. Создан массив {embeddings_np.shape}.")
-            
-            # Записываем текущий батч в предвыделенный массив
+
             embeddings_np[start_index:end_index] = batch_embeddings_np
             
-        
-        # Проверяем, был ли массив создан (на случай пустого входа)
+
         if embeddings_np is None:
              print("Предупреждение: Не удалось создать массив эмбеддингов (возможно, пустой входной список diffs).")
              return np.empty((0, embedding_dim if embedding_dim > 0 else 0), dtype=np.float32)
              
         print(f"Сгенерированы эмбеддинги размера: {embeddings_np.shape}")
-        # Сохранение
         try:
             np.save(output_path, embeddings_np)
             print(f"Семантические эмбеддинги сохранены в {output_path}")
@@ -202,17 +194,17 @@ def generate_semantic_embeddings(diffs: List[str], tokenizer: AutoTokenizer, mod
     except Exception as e:
         print(f"Ошибка во время генерации эмбеддингов: {e}")
         import traceback
-        traceback.print_exc() # Выводим полный traceback для отладки
+        traceback.print_exc()
         return None
 
 def build_faiss_index(embeddings: np.ndarray, index_path: str):
     """Строит и сохраняет FAISS индекс."""
     if embeddings is None or embeddings.size == 0:
         print("Ошибка: Нет эмбеддингов для построения FAISS индекса.")
-        return False # Возвращаем False при ошибке
+        return False
     if os.path.exists(index_path):
         print(f"FAISS индекс уже существует: {index_path}. Пропуск построения.")
-        return True # Возвращаем True, если существует
+        return True
         
     print("Построение FAISS индекса...")
     try:
@@ -223,7 +215,6 @@ def build_faiss_index(embeddings: np.ndarray, index_path: str):
         index = faiss.IndexFlatIP(embeddings_normalized.shape[1])
         index.add(embeddings_normalized)
         print(f"FAISS индекс построен с {index.ntotal} векторами.")
-        # Сохранение
         faiss.write_index(index, index_path)
         print(f"FAISS индекс сохранен в {index_path}")
         return True
@@ -239,9 +230,8 @@ def prepare_structural_embeddings_for_all(file_paths_list: List[List[str]],
     """Вычисляет и сохраняет гиперболические центроиды для всех данных."""
     
     embedding_dim = config.get("hyperbolic_embedding_dim", 2)
-    dtype = DEFAULT_DTYPE # Используем глобальный float32 для train.py
+    dtype = DEFAULT_DTYPE
 
-    # Проверка существующего файла 
     if os.path.exists(output_path):
         logging.info(f"Структурные эмбеддинги (центроиды) уже существуют: {output_path}. Загрузка...")
         try:
@@ -319,9 +309,6 @@ def prepare_all_data(config: dict) -> bool:
     if not os.path.exists(jsonl_path):
         logging.error(f"Основной файл данных JSONL не найден: {jsonl_path}. Создайте его с помощью prepare_dataset.py или укажите правильный путь.")
         return False
-    # if not os.path.exists(struct_emb_path):
-    #     logging.error(f"Файл структурных эмбеддингов не найден: {struct_emb_path}. Запустите prepare_dataset.py")
-    #     return False
 
     # 2. Чтение данных из JSONL
     logging.info(f"Чтение данных из {jsonl_path}...")
@@ -426,16 +413,15 @@ def prepare_all_data(config: dict) -> bool:
                 logging.error(f"Ошибка загрузки сем. эмб. для KB Dataset: {e}")
                 return False
         try:
-            # Убедимся, что число эмбеддингов совпадает с числом текстов
             if len(semantic_embeddings) != len(diffs):
                  raise ValueError(f"Число сем. эмб. ({len(semantic_embeddings)}) не совпадает с числом diffs ({len(diffs)}) для KB Dataset.")
             kb_dataset = Dataset.from_dict({'title': titles, 'text': diffs, 'embeddings': [e for e in semantic_embeddings]})
             kb_dataset.save_to_disk(kb_path)
             logging.info(f"KB Dataset сохранен в {kb_path}.")
-            del kb_dataset # Освобождаем память
+            del kb_dataset
         except Exception as e:
             logging.error(f"Ошибка создания/сохранения KB Dataset: {e}")
-            import traceback; traceback.print_exc();
+            import traceback; traceback.print_exc()
             return False
     else:
         logging.info(f"KB Dataset уже существует: {kb_path}.")
@@ -468,21 +454,18 @@ def prepare_all_data(config: dict) -> bool:
             if _viz_utils_available:
                 try:
                     logging.info("Отрисовка диска Пуанкаре с центроидами...")
-                    # Создаем директорию для фигур, если она не существует
                     figures_dir = os.path.join(config["prepared_data_dir"], "figures")
                     os.makedirs(figures_dir, exist_ok=True)
                     
-                    # Выбираем подмножество центроидов для отрисовки (не более 1000 для производительности)
                     sample_size = min(1000, len(struct_embeddings))
                     indices = np.random.choice(len(struct_embeddings), size=sample_size, replace=False)
                     
                     sampled_centroids = struct_embeddings[indices]
                     sampled_file_paths = [file_paths_list[i] for i in indices]
                     
-                    # Отрисовываем диск Пуанкаре
                     poincare_disk_path = os.path.join(figures_dir, "poincare_disk.png")
                     viz_utils.plot_poincare_disk(
-                        centroids=sampled_centroids, 
+                        centroids=sampled_centroids,
                         file_paths=sampled_file_paths,
                         output_path=poincare_disk_path,
                         figsize=(8, 8),
@@ -505,11 +488,11 @@ def load_split_data(config: dict, split_name: str) -> Optional[Dict]:
     try:
         file_path = config[f"{split_name}_split_path"]
     except KeyError:
-        logging.error(f"Ключ '{split_name}_split_path' не найден в CONFIG.") # Используем logging
+        logging.error(f"Ключ '{split_name}_split_path' не найден в CONFIG.")
         return None
     try:
         with open(file_path, 'rb') as f: split_data = pickle.load(f)
-        logging.info(f"Данные для '{split_name}' загружены из {file_path}") # Используем logging
+        logging.info(f"Данные для '{split_name}' загружены из {file_path}")
         
         num_entries = len(split_data.get('messages', [])) # Определяем количество записей
         
@@ -532,8 +515,8 @@ def load_split_data(config: dict, split_name: str) -> Optional[Dict]:
     except FileNotFoundError:
         logging.error(f"Файл с данными сплита '{split_name}' не найден: {file_path}")
         return None
-    except Exception as e: 
-        logging.error(f"Ошибка загрузки '{split_name}' data из {file_path}: {e}") # Используем logging
+    except Exception as e:
+        logging.error(f"Ошибка загрузки '{split_name}' data из {file_path}: {e}")
         return None
 
 def tokenize_dataset_for_training(dataset_dict: Dict, tokenizer: RagTokenizer, config: dict) -> Optional[Dataset]:
@@ -574,7 +557,6 @@ def tokenize_dataset_for_training(dataset_dict: Dict, tokenizer: RagTokenizer, c
         # Колонки question_diffs и question_file_paths остаются в формате Python list
         return tokenized_dataset
     except Exception as e:
-        logging.error(f"Ошибка при токенизации датасета: {e}", exc_info=True) 
-        # import traceback; traceback.print_exc()
+        logging.error(f"Ошибка при токенизации датасета: {e}", exc_info=True)
         return None
     

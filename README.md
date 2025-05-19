@@ -1,21 +1,36 @@
-# RAG Hyperbolic Experiment
+# Hyperbolic RAG Playground
 
-This project provides a small framework for running a simplified RAG training
-loop. The main entry point is `run_experiment.py` which calls `rag_hyp.main()`.
+This repository contains a minimal setup for experimenting with
+Retrieval‑Augmented Generation enhanced with hyperbolic reranking.
+The code is intentionally lightweight so you can quickly inspect the
+ideas and modify them for your own projects.
 
-The package is organised into a few modules:
+## Key Components
 
-- `config.py` – experiment configuration values.
-- `data_utils.py` – utilities for preparing the dataset and tokenising it.
-- `model_utils.py` – lightweight custom data collator used during training.
-- `train_utils.py` – helper functions to initialise the model and run training.
-- `experiment.py` – single entry point that stitches everything together.
+- **`prepare_dataset.py`** – script to build the knowledge base and
+  structural embeddings.
+- **`rag_hyp/config.py`** – stores all configuration values.
+- **`rag_hyp/data_utils.py`** – dataset loading and preprocessing helpers.
+- **`rag_hyp/hyperbolic_utils.py`** – small library for hyperbolic maths.
+- **`rag_hyp/custom_models.py`** – simplified retriever, model and trainer
+  implementations with hyperbolic reranking.
+- **`rag_hyp/train_utils.py`** – utilities that tie everything together.
 
-To launch the experiment run:
+## Running
+
+1. Download or prepare the dataset referenced in `config.py`.
+2. Run `python prepare_dataset.py` to create embeddings and FAISS index.
+3. Start training with:
 
 ```bash
 python run_experiment.py
 ```
 
-The prepared dataset used for experiments is available on
+Metrics and figures will be saved under `prepared_data/`.
+
+The small commit dataset used here is available on
 [Hugging Face](https://huggingface.co/datasets/Malolmalsky/commit_dataset).
+
+## License
+
+The code is distributed under the MIT license.
