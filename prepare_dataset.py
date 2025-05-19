@@ -1,5 +1,4 @@
-"""Dataset preparation script.
-This is a placeholder implementation."""
+"""Dataset preparation script."""
 import polars as pl
 
 if __name__ == "__main__":
