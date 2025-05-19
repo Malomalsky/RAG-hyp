@@ -476,8 +476,7 @@ def save_model_stats(model, epoch, output_dir="logs/model_stats"):
     
     print(f"Статистика модели для эпохи {epoch} сохранена в {output_path}")
 
-# --- НОВАЯ ФУНКЦИЯ --- 
-def plot_embedding_comparison(hyperbolic_embeddings_2d, euclidean_embeddings_2d, 
+def plot_embedding_comparison(hyperbolic_embeddings_2d, euclidean_embeddings_2d,
                               labels=None, output_path="figures/embedding_comparison.png",
                               figsize=(12, 6), dpi=300):
     """
@@ -526,7 +525,6 @@ def plot_embedding_comparison(hyperbolic_embeddings_2d, euclidean_embeddings_2d,
     plt.close(fig)
     
     print(f"График сравнения проекций сохранен в {output_path}")
-# --- КОНЕЦ НОВОЙ ФУНКЦИИ --- 
 
 if __name__ == "__main__":
     # Пример использования функций
