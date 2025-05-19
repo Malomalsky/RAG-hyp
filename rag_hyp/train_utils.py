@@ -7,8 +7,16 @@ import numpy as np
 import torch
 from transformers import (
     RagTokenizer,
+
     RagRetriever,
     Seq2SeqTrainingArguments,
+)
+
+from .reranking import (
+    RerankingRagRetriever,
+    RerankingRagSequenceForGeneration,
+    RerankingSeq2SeqTrainer,
+    LoggingCallback,
 )
 
 from .model_utils import CustomDataCollatorWithPaths
@@ -27,24 +35,15 @@ from .data_utils import (
 
 
 def initialize_reranking_rag_model(config: dict):
+    """Load the RAG model and wrap the retriever for reranking."""
     tokenizer = RagTokenizer.from_pretrained(config["rag_model_name"])
-    base_model = RerankingRagSequenceForGeneration.from_pretrained(config["rag_model_name"])
-    retriever = RagRetriever.from_pretrained(
+
         config["rag_model_name"],
         index_name="custom",
         passages_path=config["knowledge_base_dataset_path"],
         index_path=config["faiss_index_path"],
     )
-    struct_embeds = torch.load(config["structural_embeddings_output_path"], map_location="cpu")
-    reranking = RerankingRagRetriever(
-        base_retriever=retriever,
-        structural_embeddings=struct_embeds.to(config["device"]),
-        rerank_weight=config.get("rerank_weight", 0.2),
-        n_docs=config.get("n_final", 5),
-    )
-    base_model.rag.retriever = reranking
-    base_model.to(config["device"])
-    return tokenizer, base_model
+
 
 
 def postprocess_text(preds, labels):
@@ -116,6 +115,7 @@ def main_training_loop(config: dict):
         tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=partial(compute_metrics, tokenizer=tokenizer.generator),
+        callbacks=[LoggingCallback(early_stopping_patience=config.get("early_stopping_patience", 3))],
     )
     trainer.add_callback(LoggingCallback())
     trainer.train()

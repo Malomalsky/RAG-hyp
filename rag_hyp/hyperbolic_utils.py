@@ -13,6 +13,7 @@ poincare_ball = geoopt.PoincareBall(c=1.0)
 try:
     poincare_ball.k.requires_grad_(False)
 except AttributeError:
+
     pass
 
 def project_to_poincare_ball(vectors: torch.Tensor, manifold: geoopt.PoincareBall = poincare_ball, dim: int = -1) -> torch.Tensor:
